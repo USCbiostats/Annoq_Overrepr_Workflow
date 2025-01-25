@@ -9,7 +9,7 @@ export type ResultsSecondProps = {
     data: any
 }
 
-const StyledTableCell = styled(TableCell)(({ theme }) => ({
+const StyledTableCell = styled(TableCell)(() => ({
     [`&.${tableCellClasses.head}`]: {
         backgroundColor: 'rgb(220,220,220)',
     },

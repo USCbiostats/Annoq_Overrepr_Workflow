@@ -45,7 +45,7 @@ cd backend
 Then run the following script.
 
 ```bash
-.scripts/build_frontend.sh
+./scripts/build_frontend.sh
 ```
 
 ## Running the API

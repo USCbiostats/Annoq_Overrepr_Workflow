@@ -8,7 +8,7 @@ fi
 
 # CD into the frontend directory
 cd ../frontend
-
+ 
 # Install the dependencies
 npm install
 
@@ -16,11 +16,10 @@ npm install
 npm run build
 
 # Copy the built frontend to the backend directory
-cp -r build ../backend
+cp -r dist ../backend
 
 # CD back into the backend directory
 cd ../backend
 
 # Print a success message
 echo "Frontend built successfully"
-```

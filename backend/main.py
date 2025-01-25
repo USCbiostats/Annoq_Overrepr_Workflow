@@ -34,9 +34,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Add the build folder that contains the react app
-app.mount("/", StaticFiles(directory="build", html=True))
-
 @app.post("/overrepr_test")
 def overrepresentation_test(
     organism: Annotated[str, Body(...)],
@@ -87,3 +84,7 @@ def overrepresentation_test(
 
     except Exception as e:
         return {"error": str(e)}
+
+
+# Add the build folder that contains the react app
+app.mount("/", StaticFiles(directory="dist", html=True))

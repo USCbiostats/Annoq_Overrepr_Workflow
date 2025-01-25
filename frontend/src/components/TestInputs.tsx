@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useState } from 'react';
-import { Button, TextField, Select, MenuItem, FormControl, InputLabel, FormGroup, FormControlLabel, Checkbox, Collapse, Accordion, Typography, AccordionSummary, AccordionDetails, AccordionActions, Stack } from '@mui/material';
+import { Button, TextField, Select, MenuItem, FormControl, InputLabel, FormGroup, FormControlLabel, Checkbox, Collapse, Accordion, Typography, AccordionSummary, AccordionDetails, Stack } from '@mui/material';
 import { CorrectionTypes, InputTypes, TestTypes } from '../constants';
 import { process_rsids } from '../utils';
 import { UploadFile } from '@mui/icons-material';
