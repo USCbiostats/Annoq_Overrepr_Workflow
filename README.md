@@ -45,6 +45,7 @@ cd backend
 Then run the following script.
 
 ```bash
+chmod +x ./scripts/build_frontend.sh
 ./scripts/build_frontend.sh
 ```
 
