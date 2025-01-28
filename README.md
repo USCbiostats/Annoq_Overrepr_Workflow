@@ -65,5 +65,5 @@ source venv/bin/activate
 To run the API, use the following command:
 
 ```bash
-uvicorn main:app
+uvicorn main:app --port 8002 --reload
 ```
