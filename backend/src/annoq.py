@@ -11,6 +11,7 @@ from src.query import (
     IdsQuery,
     KeywordQuery,
 )
+from io import StringIO
 
 
 def get_unique_gene_list(input_type: InputType, query: Any) -> list[str]:
@@ -120,14 +121,14 @@ def extract_unique_genes(df: pd.DataFrame) -> list[str]:
 
 
 def get_download_url(es_query: Any) -> str:
-    ANNOQ_DOWNLOAD_URL = "http://annoq.org/api/total_res"
+    ANNOQ_DOWNLOAD_URL = "https://api.annoq.org/total_res"
 
     # Retrieve the download URL from the Annoq API
     try:
-        response = requests.post(ANNOQ_DOWNLOAD_URL, json=es_query)
+        response = requests.post(ANNOQ_DOWNLOAD_URL, json=es_query, verify=False)
         response.raise_for_status()
         download_url = response.json()["url"]
-        url_prefix = "http://annoq.org/api"
+        url_prefix = "https://api.annoq.org"
         download_url = f"{url_prefix}{download_url}"
         return download_url
     except requests.exceptions.RequestException as e:
@@ -141,8 +142,16 @@ def download_data(download_url: str) -> pd.DataFrame:
     # Load the data into a pandas DataFrame
 
     try:
-        df = pd.read_csv(download_url, sep="\t", header=0)
-        return df
+        # Download file using requests library
+        file = requests.get(download_url, verify=False)
+        file.raise_for_status()
+
+        # Load the data into a pandas DataFrame
+
+        # Use the first row as the header
+        # Use tab as the separator
+        buffer = StringIO(file.text)
+        return pd.read_csv(buffer, sep="\t", header=0)
     except Exception as e:
         print(f"Error: {e}")
         raise Exception("Failed to download data")
