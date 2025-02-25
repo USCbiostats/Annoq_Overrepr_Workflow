@@ -2,15 +2,13 @@
 
 from fastapi import FastAPI, Body
 from fastapi.staticfiles import StaticFiles
+from fastapi import status
 
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.exceptions import HTTPException
 
 from src.annoq import get_unique_gene_list
-from src.panther import (
-    OverRepresentationTestType,
-    OverRepresentationTestCorrectionType,
-    overrepr_test,
-)
+
 from src.query import (
     InputType,
     ChromosomeQuery,
@@ -21,7 +19,7 @@ from src.query import (
     KeywordQuery,
 )
 
-from typing import Annotated
+from typing import Annotated, Any
 
 app = FastAPI()
 
@@ -34,10 +32,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.post("/overrepr_test")
-def overrepresentation_test(
-    organism: Annotated[str, Body(...)],
-    annotDataSet: Annotated[str, Body(...)],
+@app.post("/gene_mappings")
+def gene_mappings(
     input_type: Annotated[InputType, Body(...)],
     chrQuery: ChromosomeQuery | None = None,
     rsIdQuery: RsIdQuery | None = None,
@@ -45,16 +41,8 @@ def overrepresentation_test(
     idsQuery: IdsQuery | None = None,
     geneQuery: GeneQuery | None = None,
     keywordQuery: KeywordQuery | None = None,
-    refOrganism: Annotated[str | None, Body(...)] = None,
-    refInputList: list[str] | None = None,
-    enrichmentTestType: Annotated[
-        OverRepresentationTestType, Body(...)
-    ] = OverRepresentationTestType.FISHER,
-    correction: Annotated[
-        OverRepresentationTestCorrectionType, Body(...)
-    ] = OverRepresentationTestCorrectionType.FDR,
-):
-    query = None
+) -> list[str]:
+    query: Any = None
     if input_type == InputType.chromosome:
         query = chrQuery
     elif input_type == InputType.rsId:
@@ -70,20 +58,11 @@ def overrepresentation_test(
 
     try:
         gene_list = get_unique_gene_list(input_type, query)
-        result = overrepr_test(
-            geneInputList=gene_list,
-            organism=organism,
-            annotDataSet=annotDataSet,
-            refOrganism=refOrganism,
-            refInputList=refInputList,
-            enrichmentTestType=enrichmentTestType,
-            correction=correction,
-        )
-
-        return result
+        
+        return gene_list
 
     except Exception as e:
-        return {"error": str(e)}
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
 # Add the build folder that contains the react app

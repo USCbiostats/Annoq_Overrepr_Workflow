@@ -1,110 +1,141 @@
-import * as React from "react"
-import { useState } from "react"
-import TestInputs from "./components/TestInputs"
-import TopBar from "./components/TopBar"
-import { API_ENDPOINTS } from "./constants"
-import Alert from "@mui/material/Alert"
-import CircularProgress from "@mui/material/CircularProgress"
-import Results from "./components/Results"
-import { Stack, Typography } from "@mui/material"
-import { Dataset, Organism } from "./models"
-import { getDatasets, getOrganisms } from "./apis"
-import { validateData } from "./utils"
+import * as React from "react";
+import { useState } from "react";
+import TestInputs from "./components/TestInputs";
+import TopBar from "./components/TopBar";
+import Alert from "@mui/material/Alert";
+import CircularProgress from "@mui/material/CircularProgress";
+import { Stack, Typography } from "@mui/material";
+import { CorrectionType, TestType } from "./constants";
+import { getGeneMappings } from "./apis";
 
 function App() {
+  const [data, setData] = useState(undefined as any);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null as string | null);
 
-  const [data, setData] = useState(undefined as any)
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState(null as string | null)
-  const [organisms, setOrganisms] = useState(null as Organism[] | null)
-  const [datasets, setDatasets] = useState(null as Dataset[] | null)
-
-
-  React.useEffect(() => {
-    (async () => {
-      try {
-        const orgs = await getOrganisms()
-        if (orgs?.length > 0) {
-          setOrganisms(orgs)
-        }
-      }
-      catch {
-      }
-
-      try {
-        const dsets = await getDatasets()
-        if (dsets?.length > 0) {
-          setDatasets(dsets)
-        }
-      }
-      catch {
-      }
-    })()
-  }, [])
-
-  const onRunTest = async (payload: any) => {
-
-    setIsLoading(true)
-    setError(null)
+  const onRunTest = async (
+    payload: any,
+    dataset: string,
+    testType: TestType,
+    correction: CorrectionType
+  ) => {
+    setIsLoading(true);
+    setError(null);
 
     // Retrieve the data from the server
     try {
+      const response = await getGeneMappings(payload);
 
-      const response = await fetch(API_ENDPOINTS.overrepr_test, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payload)
-      }).then(res => res.json())
+      // Create a new unrendered Form with the action as https://pantherdb.org/webservices/go/overrep.jsp, method as POST and the payload as the input fields
+      // Open the form in a new tab
+      // Submit the form
 
-      if (response.error !== undefined) {
-        throw new Error(response.error)
-      }
+      const form = document.createElement("form");
+      form.method = "POST";
+      form.action = "https://pantherdb.org/webservices/go/overrep.jsp";
+      form.target = "_blank";
 
-      const valid = validateData(response)
+      const correctionField = document.createElement("input");
+      correctionField.type = "hidden";
+      correctionField.name = "correction";
+      correctionField.value = correction;
 
-      if (!valid) {
-        throw new Error("Error occurred while fetching data. Please try again.")
-      }
+      const datasetField = document.createElement("input");
+      datasetField.type = "hidden";
+      datasetField.name = "annotDataSet";
+      datasetField.value = dataset;
 
-      setData(response)
+      const datasetField2 = document.createElement("input");
+      datasetField2.type = "hidden";
+      datasetField2.name = "type";
+      datasetField2.value = dataset;
+
+      const testTypeField = document.createElement("input");
+      testTypeField.type = "hidden";
+      testTypeField.name = "testType";
+      testTypeField.value = testType;
+
+      const speciesField = document.createElement("input");
+      speciesField.type = "hidden";
+      speciesField.name = "species";
+      speciesField.value = "HUMAN";
+
+      const formatField = document.createElement("input");
+      formatField.type = "hidden";
+      formatField.name = "format";
+      formatField.value = "html";
+
+      const resourceField = document.createElement("input");
+      resourceField.type = "hidden";
+      resourceField.name = "resource";
+      resourceField.value = "PANTHER";
+
+      const inputField = document.createElement("input");
+      inputField.type = "hidden";
+      inputField.name = "input";
+      inputField.value = response.join("\n");
+
+      form.appendChild(correctionField);
+      form.appendChild(datasetField);
+      form.appendChild(datasetField2);
+      form.appendChild(testTypeField);
+      form.appendChild(speciesField);
+      form.appendChild(formatField);
+      form.appendChild(resourceField);
+      form.appendChild(inputField);
+
+      document.body.appendChild(form);
+      form.submit();
+      document.body.removeChild(form);
+
+      setData(response);
+    } catch (error: any) {
+      setError("Error occurred while fetching data. Please try again.");
+    } finally {
+      setIsLoading(false);
     }
-    catch (error: any) {
-      setError(error.toString())
-    }
-    finally {
-      setIsLoading(false)
-    }
-  }
+  };
 
   return (
-    <Stack spacing={2}>
-      <Stack>
-        <TopBar />
-        <TestInputs onRunTest={onRunTest} isLoading={isLoading} onReset={() => {
-          setData(undefined)
-          setError(null)
-          setIsLoading(false)
-        }}
-          datasets={datasets}
-          orgs={organisms} />
+    <Stack>
+      <TopBar />
+      <Stack spacing={2}>
+        {isLoading && (
+          <Stack
+            alignItems={"center"}
+            spacing={2}
+            paddingTop={4}
+            position={"absolute"}
+            left={"0"}
+            right={"0"}
+            marginLeft={"auto"}
+            marginRight={"auto"}
+            zIndex={100}
+            height={"100%"}
+            style={{ backgroundColor: "rgba(240, 240, 240, 0.75)" }}
+            sx={(theme) => ({ color: theme.palette.primary.main })}
+          >
+            <CircularProgress color="inherit"></CircularProgress>
+            <Typography>Fetching Gene Information</Typography>
+          </Stack>
+        )}
+        <TestInputs
+          onRunTest={onRunTest}
+          isLoading={isLoading}
+          onReset={() => {
+            setData(undefined);
+            setError(null);
+            setIsLoading(false);
+          }}
+        />
+        {error !== null && (
+          <Alert variant="outlined" severity="error">
+            {error}
+          </Alert>
+        )}
       </Stack>
-      {
-        error !== null &&
-        <Alert variant="outlined" severity="error">
-          {error}
-        </Alert>
-      }
-      {
-        isLoading &&
-        <Stack style={{ paddingTop: "50px" }} alignItems={'center'} spacing={2}><CircularProgress /><Typography>Running Overrepresentation Test</Typography></Stack>
-      }
-      {
-        !isLoading && !error && <Results data={data} />
-      }
     </Stack>
-  )
+  );
 }
 
-export default App
+export default App;

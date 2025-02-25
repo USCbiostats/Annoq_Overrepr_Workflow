@@ -7,7 +7,3 @@ export const process_rsids = (idsText: string): Array<string> => {
     const ids = idsText.split(/[\s,]+/).filter(id => id !== '');
     return [...new Set(ids)];
 }
-
-export const validateData = (data: any): boolean => {
-    return !!data?.results
-}
