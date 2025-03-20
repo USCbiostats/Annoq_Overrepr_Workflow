@@ -5,7 +5,7 @@ export enum InputTypes {
 }
 
 export enum TestType {
-    FISCHER = "FISCHER",
+    FISHER = "FISHER",
     BINOMIAL = "BINOMIAL"
 }
 
@@ -18,38 +18,38 @@ export enum CorrectionType {
 export const Datasets = [
     {
         "name": "GO biological process complete",
-        "value": "fullgo_bp_comp"
+        "value": "GO:0008150"
     },
     {
         "name": "GO molecular function complete",
-        "value": "fullgo_mf_comp"
+        "value": "GO:0003674"
     },
     {
         "name": "GO cellular component complete",
-        "value": "fullgo_cc_comp"
+        "value": "GO:0005575"
     },
     {
         "name": "PANTHER pathways",
-        "value": "pathway"
+        "value": "ANNOT_TYPE_ID_PANTHER_PATHWAY"
     },
     {
         "name": "PANTHER GO-Slim Molecular Function",
-        "value": "panther_mf"
+        "value": "ANNOT_TYPE_ID_PANTHER_GO_SLIM_MF"
     },
     {
         "name": "PANTHER GO-Slim Biological Process",
-        "value": "panther_bp"
+        "value": "ANNOT_TYPE_ID_PANTHER_GO_SLIM_BP"
     },
     {
         "name": "PANTHER GO-Slim Cellular Component",
-        "value": "panther_cc"
+        "value": "ANNOT_TYPE_ID_PANTHER_GO_SLIM_CC"
     },
     {
         "name": "PANTHER Protein Class",
-        "value": "panther_pc"
+        "value": "ANNOT_TYPE_ID_PANTHER_PC"
     },
     {
         "name": "Reactome pathways",
-        "value": "reactome"
+        "value": "ANNOT_TYPE_ID_REACTOME_PATHWAY"
     }
 ]

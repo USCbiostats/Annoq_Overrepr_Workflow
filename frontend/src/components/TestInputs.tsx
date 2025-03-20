@@ -49,9 +49,16 @@ const TestInputs: React.FC<TestInputsProps> = ({
   const [vcfFile, setVcfFile] = useState("");
 
   const [advancedOptions, setAdvancedOptions] = useState(false);
-  const [testType, setTestType] = useState(TestType.FISCHER);
+  const [testType, setTestType] = useState(TestType.FISHER);
   const [annotDataSet, setAnnotDataSet] = useState(Datasets[0].value);
   const [correction, setCorrection] = useState(CorrectionType.FDR);
+
+  const submitDisabled =
+    isLoading ||
+    (inputType === InputTypes.VCF && !vcfFile.trim()) ||
+    (inputType === InputTypes.CHROMOSOME &&
+      (!chromosome.trim() || !startPosition.trim() || !endPosition.trim())) ||
+    (inputType === InputTypes.RSIDS && !rsIds.trim());
 
   const query_data = () => {
     const data: Record<string, any> = {};
@@ -106,7 +113,7 @@ const TestInputs: React.FC<TestInputsProps> = ({
     setEndPosition("");
     setRsIds("");
     setVcfFile("");
-    setTestType(TestType.FISCHER);
+    setTestType(TestType.FISHER);
     setAnnotDataSet(Datasets[0].value);
     setCorrection(CorrectionType.FDR);
     setAdvancedOptions(false);
@@ -302,7 +309,7 @@ const TestInputs: React.FC<TestInputsProps> = ({
                       value={testType}
                       onChange={(e) => setTestType(e.target.value as TestType)}
                     >
-                      <MenuItem value={TestType.FISCHER}>
+                      <MenuItem value={TestType.FISHER}>
                         Fisher’s exact
                       </MenuItem>
                       <MenuItem value={TestType.BINOMIAL}>Binomial</MenuItem>
@@ -336,9 +343,9 @@ const TestInputs: React.FC<TestInputsProps> = ({
                   variant="contained"
                   color="primary"
                   onClick={handleRunTest}
-                  disabled={isLoading}
+                  disabled={submitDisabled}
                 >
-                  Run Test
+                  <Typography variant="button">Run Test</Typography>
                 </Button>
                 <Button
                   variant="outlined"
@@ -346,7 +353,7 @@ const TestInputs: React.FC<TestInputsProps> = ({
                   onClick={handleReset}
                   disabled={isLoading}
                 >
-                  Reset
+                  <Typography variant="button">Reset</Typography>
                 </Button>
               </Stack>
             </Stack>
