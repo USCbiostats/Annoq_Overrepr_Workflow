@@ -1,0 +1,7 @@
+.mypy_cache
+.DS_Store
+__pycache__
+*.egg-info
+*.egg
+*.whl
+*.pdb
