@@ -15,13 +15,25 @@ import {
   Link,
 } from "@mui/material";
 import { CorrectionType, TestType } from "../constants";
-import { getGeneMappings } from "../apis";
+import { getGeneMappings, getOverrepresentation } from "../apis";
 import Footer from "../components/Footer";
+import { GeneMappingResponse } from "../models";
+import ResultDisplay from "../components/ResultDisplay";
 
 function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null as string | null);
   const [success, setSuccess] = useState(false);
+  const [response, setResponse] = useState(null as GeneMappingResponse | null);
+  const [overrepresentationResult, setOverrepresentationResult] = useState(
+    null as any
+  );
+  const [currentStage, setCurrentStage] = useState(1);
+  const [pantherId, setPantherId] = useState({
+    dataset: "",
+    correction: "" as CorrectionType,
+    testType: "" as TestType,
+  });
 
   const onRunTest = async (
     payload: any,
@@ -33,63 +45,38 @@ function Home() {
     setError(null);
     setSuccess(false);
 
-    // Retrieve the data from the server
     try {
       const response = await getGeneMappings(payload);
+      setResponse(response);
 
-      const form = document.createElement("form");
-      form.method = "POST";
-      form.action =
-        "https://pantherdb.org/services/oai/pantherdb/enrich/overrep";
-      form.target = "_blank";
+      if (!response) {
+        setError("No data returned from the server. Please try again.");
+        return;
+      }
+      if (response.gene_list.length === 0) {
+        setError("No genes found. Please check your input.");
+        return;
+      }
 
-      const correctionField = document.createElement("input");
-      correctionField.type = "hidden";
-      correctionField.name = "correction";
-      correctionField.value = correction;
+      const overrepresentationResponse = await getOverrepresentation(
+        response.gene_list.join(","),
+        dataset,
+        correction,
+        testType
+      );
+      if (!overrepresentationResponse) {
+        setError("No data returned from the server. Please try again.");
+        return;
+      }
+      setOverrepresentationResult(overrepresentationResponse);
 
-      const datasetField = document.createElement("input");
-      datasetField.type = "hidden";
-      datasetField.name = "annotDataSet";
-      datasetField.value = dataset;
+      setPantherId({
+        dataset,
+        correction,
+        testType,
+      });
 
-      const testTypeField = document.createElement("input");
-      testTypeField.type = "hidden";
-      testTypeField.name = "enrichmentTestType";
-      testTypeField.value = testType;
-
-      const speciesField = document.createElement("input");
-      speciesField.type = "hidden";
-      speciesField.name = "organism";
-      speciesField.value = "9606";
-
-      const formatField = document.createElement("input");
-      formatField.type = "hidden";
-      formatField.name = "format";
-      formatField.value = "html";
-
-      const resourceField = document.createElement("input");
-      resourceField.type = "hidden";
-      resourceField.name = "resource";
-      resourceField.value = "PANTHER";
-
-      const inputField = document.createElement("input");
-      inputField.type = "hidden";
-      inputField.name = "geneInputList";
-      inputField.value = response.gene_list.join(",");
-
-      form.appendChild(correctionField);
-      form.appendChild(datasetField);
-      form.appendChild(testTypeField);
-      form.appendChild(speciesField);
-      form.appendChild(formatField);
-      form.appendChild(resourceField);
-      form.appendChild(inputField);
-
-      document.body.appendChild(form);
-      form.submit();
-      document.body.removeChild(form);
-
+      setCurrentStage(2);
       setSuccess(true);
     } catch (error: any) {
       setError("Error occurred while fetching data. Please try again.");
@@ -98,15 +85,80 @@ function Home() {
     }
   };
 
+  const submitToPanther = () => {
+    if (!response?.gene_list.length) {
+      setError("No gene list available. Please run the analysis again.");
+      return;
+    }
+
+    const form = document.createElement("form");
+    form.method = "POST";
+    form.action = "https://pantherdb.org/services/oai/pantherdb/enrich/overrep";
+    form.target = "_blank";
+
+    const correctionField = document.createElement("input");
+    correctionField.type = "hidden";
+    correctionField.name = "correction";
+    correctionField.value = pantherId.correction;
+
+    const datasetField = document.createElement("input");
+    datasetField.type = "hidden";
+    datasetField.name = "annotDataSet";
+    datasetField.value = pantherId.dataset;
+
+    const testTypeField = document.createElement("input");
+    testTypeField.type = "hidden";
+    testTypeField.name = "enrichmentTestType";
+    testTypeField.value = pantherId.testType;
+
+    const speciesField = document.createElement("input");
+    speciesField.type = "hidden";
+    speciesField.name = "organism";
+    speciesField.value = "9606";
+
+    const formatField = document.createElement("input");
+    formatField.type = "hidden";
+    formatField.name = "format";
+    formatField.value = "html";
+
+    const resourceField = document.createElement("input");
+    resourceField.type = "hidden";
+    resourceField.name = "resource";
+    resourceField.value = "PANTHER";
+
+    const inputField = document.createElement("input");
+    inputField.type = "hidden";
+    inputField.name = "geneInputList";
+    inputField.value = response.gene_list.join(",");
+
+    form.appendChild(correctionField);
+    form.appendChild(datasetField);
+    form.appendChild(testTypeField);
+    form.appendChild(speciesField);
+    form.appendChild(formatField);
+    form.appendChild(resourceField);
+    form.appendChild(inputField);
+
+    document.body.appendChild(form);
+    form.submit();
+    document.body.removeChild(form);
+  };
+
   const handleCloseSuccess = () => {
     setSuccess(false);
+  };
+
+  const resetAnalysis = () => {
+    setCurrentStage(1);
+    setResponse(null);
+    setOverrepresentationResult(null);
+    setError(null);
   };
 
   return (
     <Box sx={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
       <TopBar />
 
-      {/* Loading indicator at the top of the page */}
       <Box
         sx={{ width: "100%", position: "fixed", top: 0, left: 0, zIndex: 9999 }}
       >
@@ -116,42 +168,53 @@ function Home() {
       </Box>
 
       <Container maxWidth="lg" sx={{ flexGrow: 1, py: 2 }}>
-        <Paper
-          elevation={3}
-          sx={{
-            position: "relative",
-            overflow: "hidden",
-            borderRadius: 2,
-            mb: 3,
-          }}
-        >
-          {isLoading && (
-            <Box
-              sx={{
-                p: 2,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                bgcolor: "primary.light",
-                color: "primary.contrastText",
-              }}
-            >
-              <CircularProgress size={20} color="inherit" sx={{ mr: 1 }} />
-              <Typography variant="body2">
-                Processing your request, please wait...
-              </Typography>
-            </Box>
-          )}
-
-          <TestInputs
-            onRunTest={onRunTest}
-            isLoading={isLoading}
-            onReset={() => {
-              setError(null);
-              setIsLoading(false);
+        {currentStage === 1 ? (
+          <Paper
+            elevation={3}
+            sx={{
+              position: "relative",
+              overflow: "hidden",
+              borderRadius: 2,
+              mb: 3,
             }}
+          >
+            {isLoading && (
+              <Box
+                sx={{
+                  p: 2,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  bgcolor: "primary.light",
+                  color: "primary.contrastText",
+                }}
+              >
+                <CircularProgress size={20} color="inherit" sx={{ mr: 1 }} />
+                <Typography variant="body2">
+                  Processing your request, please wait...
+                </Typography>
+              </Box>
+            )}
+
+            <TestInputs
+              onRunTest={onRunTest}
+              isLoading={isLoading}
+              onReset={() => {
+                setError(null);
+                setIsLoading(false);
+              }}
+            />
+          </Paper>
+        ) : (
+          <ResultDisplay
+            response={response}
+            overrepresentationResult={overrepresentationResult}
+            resetAnalysis={resetAnalysis}
+            submitToPanther={submitToPanther}
+            annotationDataset={pantherId.dataset}
+            correctionType={pantherId.correction}
           />
-        </Paper>
+        )}
 
         {error !== null && (
           <Alert
@@ -178,7 +241,9 @@ function Home() {
             sx={{ width: "100%" }}
           >
             <AlertTitle>Success</AlertTitle>
-            Gene data processed successfully. Results opening in a new tab.
+            {currentStage === 1
+              ? "Gene data processed successfully. Results opening in a new tab."
+              : "Gene data processed successfully. View the results below."}
           </Alert>
         </Snackbar>
 

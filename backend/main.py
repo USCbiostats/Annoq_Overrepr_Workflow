@@ -8,8 +8,9 @@ from fastapi.exceptions import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from src.annoq import get_annoq_df, get_unique_gene_list
+from src.annoq import get_annoq_df, get_rsid_gene_mapping
 from src.models import GeneMappingsResponse
+from src.panther import get_panther_info
 from src.query import (
     ChromosomeQuery,
     GeneQuery,
@@ -59,15 +60,25 @@ async def gene_mappings(
         query = keywordQuery
 
     try:
-        df = get_annoq_df(input_type, query)
-        gene_lists = get_unique_gene_list(df)
+        df = await get_annoq_df(input_type, query)
+        rs_id_gene_mapping = get_rsid_gene_mapping(df)
 
-        all_unique_genes: set[str] = set()
-        for gene_list in gene_lists:
-            all_unique_genes.update(gene_list)
+        # Get all unique genes
+        all_unique_genes_set = set()
+        for genes in rs_id_gene_mapping.values():
+            all_unique_genes_set.update(genes)
+        all_unique_genes = list(all_unique_genes_set)
+
+        # Get PANTHER information for the unique genes
+        panther_gene_info, gene_panther_mapping = await get_panther_info(
+            all_unique_genes
+        )
 
         return GeneMappingsResponse(
-            gene_list=list(all_unique_genes),
+            gene_list=all_unique_genes,
+            rsId_genes_map=rs_id_gene_mapping,
+            panther_gene_info=panther_gene_info,
+            gene_panther_mapping=gene_panther_mapping,
         )
 
     except Exception as e:
