@@ -13,6 +13,7 @@ import TableCell from "@mui/material/TableCell";
 import TableContainer from "@mui/material/TableContainer";
 import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
+import TableSortLabel from "@mui/material/TableSortLabel";
 import { TableVirtuoso, TableComponents } from "react-virtuoso";
 import { GeneMappingResponse } from "../models";
 import { createResultsTableData } from "../components/utils";
@@ -47,6 +48,9 @@ interface ColumnData {
   width?: number;
 }
 
+// Add type for sort direction
+type SortDirection = "asc" | "desc";
+
 const ResultDisplay: React.FC<ResultDisplayProps> = ({
   response,
   overrepresentationResult,
@@ -57,6 +61,10 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
 }) => {
   // Add state to track whether to show all results
   const [showAllResults, setShowAllResults] = useState(false);
+
+  // Add sort states
+  const [sortBy, setSortBy] = useState<keyof OverrepResultItem>("process");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
 
   // Parse overrepresentation results
   const { tableData, filteredData } = useMemo(() => {
@@ -113,8 +121,42 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
     };
   }, [overrepresentationResult, correctionType]);
 
-  // Determine which data to display based on the showAllResults state
-  const displayData = showAllResults ? tableData : filteredData;
+  // Sort function for the data
+  const sortData = (
+    data: OverrepResultItem[],
+    sortKey: keyof OverrepResultItem,
+    direction: SortDirection
+  ) => {
+    return [...data].sort((a, b) => {
+      const aValue = a[sortKey];
+      const bValue = b[sortKey];
+
+      // Handle different data types
+      if (typeof aValue === "string" && typeof bValue === "string") {
+        return direction === "asc"
+          ? aValue.localeCompare(bValue)
+          : bValue.localeCompare(aValue);
+      } else {
+        // For numeric values
+        return direction === "asc"
+          ? (aValue as number) - (bValue as number)
+          : (bValue as number) - (aValue as number);
+      }
+    });
+  };
+
+  // Handle sort request
+  const handleRequestSort = (property: keyof OverrepResultItem) => {
+    const isAsc = sortBy === property && sortDirection === "asc";
+    setSortDirection(isAsc ? "desc" : "asc");
+    setSortBy(property);
+  };
+
+  // Determine which data to display based on the showAllResults state and apply sorting
+  const displayData = useMemo(() => {
+    const dataToSort = showAllResults ? tableData : filteredData;
+    return sortData(dataToSort, sortBy, sortDirection);
+  }, [showAllResults, tableData, filteredData, sortBy, sortDirection]);
 
   // Ref for the table container to measure available height
   const tableContainerRef = useRef<HTMLDivElement>(null);
@@ -238,7 +280,7 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
     )),
   };
 
-  // Header content without sort functionality
+  // Header content with sort functionality
   const fixedHeaderContent = () => {
     return (
       <>
@@ -265,7 +307,7 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
           </TableCell>
         </TableRow>
 
-        {/* Second Header Row without sort functionality */}
+        {/* Second Header Row with sort functionality */}
         <TableRow>
           {columns.map((column, index) => (
             <TableCell
@@ -274,10 +316,17 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
               align={index === 0 ? "left" : "center"}
               style={{ width: column.width }}
               sx={{ backgroundColor: "#f5f5f5" }}
+              onClick={() => handleRequestSort(column.dataKey)}
             >
-              <Typography variant="body2" fontWeight="bold">
-                {column.label}
-              </Typography>
+              <TableSortLabel
+                active={sortBy === column.dataKey}
+                direction={sortBy === column.dataKey ? sortDirection : "asc"}
+                hideSortIcon={false}
+              >
+                <Typography variant="body2" fontWeight="bold">
+                  {column.label}
+                </Typography>
+              </TableSortLabel>
             </TableCell>
           ))}
         </TableRow>
