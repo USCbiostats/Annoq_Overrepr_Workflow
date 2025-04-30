@@ -81,6 +81,8 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
 
   // Add state for download all columns option
   const [downloadAllColumns, setDownloadAllColumns] = useState(false);
+  // Add state for showing/hiding advanced options
+  const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
 
   // Helper function to get appropriate term based on annotation dataset
   const getDatasetTerms = (datasetValue: string) => {
@@ -528,47 +530,62 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
         </Box>
       </Box>
 
-      {/* Advanced Download Options - simplified inline UI */}
+      {/* Replace the prominent advanced options banner with subtle collapsible section */}
       <Box
         sx={{
           mb: 2,
           display: "flex",
-          alignItems: "center",
-          padding: "8px 12px",
-          backgroundColor: "rgba(0, 0, 0, 0.02)",
-          borderRadius: 1,
+          flexDirection: "column",
+          alignItems: "flex-start",
         }}
       >
-        <SettingsIcon
-          fontSize="small"
-          sx={{ mr: 1, color: "text.secondary" }}
-        />
-        <Typography variant="body2" color="text.secondary" sx={{ mr: 2 }}>
-          Advanced Options:
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            "&:hover": { color: "primary.main" },
+          }}
+          onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
+        >
+          {showAdvancedOptions ? "▼" : "►"} Advanced download options
         </Typography>
-        <FormControlLabel
-          control={
-            <Checkbox
-              checked={downloadAllColumns}
-              onChange={(e) => setDownloadAllColumns(e.target.checked)}
-              size="small"
-            />
-          }
-          label={
-            <Box sx={{ display: "flex", alignItems: "center" }}>
-              <Typography variant="body2">
-                Include all gene information columns in the downloaded file
-                (PANTHER family, subfamily, etc.)
-              </Typography>
-              <Tooltip title="When enabled, all available gene annotation data will be included in download files, not just data from the selected dataset">
-                <InfoIcon
-                  fontSize="small"
-                  sx={{ ml: 0.5, color: "info.main" }}
+
+        {showAdvancedOptions && (
+          <Box
+            sx={{
+              mt: 1,
+              ml: 2,
+              display: "flex",
+              alignItems: "center",
+            }}
+          >
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={downloadAllColumns}
+                  onChange={(e) => setDownloadAllColumns(e.target.checked)}
+                  size="small"
                 />
-              </Tooltip>
-            </Box>
-          }
-        />
+              }
+              label={
+                <Box sx={{ display: "flex", alignItems: "center" }}>
+                  <Typography variant="caption" color="text.secondary">
+                    Include all gene information columns in downloads
+                  </Typography>
+                  <Tooltip title="When enabled, all available gene annotation data will be included in download files, not just data from the selected dataset">
+                    <InfoIcon
+                      fontSize="small"
+                      sx={{ ml: 0.5, fontSize: "0.875rem", color: "info.main" }}
+                    />
+                  </Tooltip>
+                </Box>
+              }
+            />
+          </Box>
+        )}
       </Box>
 
       {/* Download options menu */}
