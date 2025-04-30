@@ -76,6 +76,33 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
     useState<null | HTMLElement>(null);
   const isDownloadMenuOpen = Boolean(downloadMenuAnchor);
 
+  // Helper function to get appropriate term based on annotation dataset
+  const getDatasetTerms = (datasetValue: string) => {
+    const dataset = Datasets.find((d) => d.value === datasetValue);
+
+    if (!dataset) return { singular: "term", plural: "terms" };
+
+    const name = dataset.name.toLowerCase();
+
+    if (name.includes("biological process")) {
+      return { singular: "biological process", plural: "biological processes" };
+    } else if (name.includes("molecular function")) {
+      return { singular: "molecular function", plural: "molecular functions" };
+    } else if (name.includes("cellular component")) {
+      return { singular: "cellular component", plural: "cellular components" };
+    } else if (name.includes("pathway")) {
+      return { singular: "pathway", plural: "pathways" };
+    } else if (name.includes("protein class")) {
+      return { singular: "protein class", plural: "protein classes" };
+    } else {
+      return { singular: "term", plural: "terms" };
+    }
+  };
+
+  // Get the appropriate term for the current dataset
+  const { singular: datasetTerm, plural: datasetTermsPlural } =
+    getDatasetTerms(annotationDataset);
+
   // Parse overrepresentation results
   const { tableData, filteredData } = useMemo(() => {
     if (!overrepresentationResult || !overrepresentationResult.results)
@@ -496,7 +523,8 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
             </MenuItem>
             <MenuItem onClick={handleDownloadSignificant}>
               <Typography variant="body2">
-                Only Significant Mappings ({filteredData.length} processes)
+                Only Significant Mappings ({filteredData.length}{" "}
+                {datasetTermsPlural})
               </Typography>
             </MenuItem>
           </Menu>
@@ -551,7 +579,7 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
             <InfoIcon fontSize="small" color="info" sx={{ mr: 1 }} />
             <Typography variant="body2" color="text.secondary">
               You can click on any number in the "#" column under "Input List"
-              to download gene mappings specific to that biological process.
+              to download gene mappings specific to that {datasetTerm}.
             </Typography>
           </Box>
 
