@@ -20,7 +20,6 @@ import {
 import InfoIcon from "@mui/icons-material/Info";
 import DownloadIcon from "@mui/icons-material/Download";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
-import SettingsIcon from "@mui/icons-material/Settings";
 import { TableVirtuoso, TableComponents } from "react-virtuoso";
 import { GeneMappingResponse } from "../models";
 import { createResultsTableData } from "../components/utils";
@@ -204,13 +203,6 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
     const dataToSort = showAllResults ? tableData : filteredData;
     return sortData(dataToSort, sortBy, sortDirection);
   }, [showAllResults, tableData, filteredData, sortBy, sortDirection]);
-
-  // Get all pantherIDs from the filtered/display data
-  const getFilteredPantherIds = () => {
-    return displayData
-      .flatMap((item) => item.mapped_panther_ids)
-      .filter((id, index, self) => self.indexOf(id) === index); // Remove duplicates
-  };
 
   const handleDownloadCSV = (
     pantherIdsToInclude?: string[],
