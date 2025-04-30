@@ -1,6 +1,16 @@
 import React, { useMemo, useState } from "react";
-import { Typography, Paper, Box, Button, Tooltip } from "@mui/material";
+import {
+  Typography,
+  Paper,
+  Box,
+  Button,
+  Tooltip,
+  Menu,
+  MenuItem,
+} from "@mui/material";
 import InfoIcon from "@mui/icons-material/Info";
+import DownloadIcon from "@mui/icons-material/Download";
+import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import Table from "@mui/material/Table";
 import TableBody from "@mui/material/TableBody";
 import TableCell from "@mui/material/TableCell";
@@ -60,6 +70,11 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
   // Add sort states
   const [sortBy, setSortBy] = useState<keyof OverrepResultItem>("process");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+
+  // Add state for the download menu
+  const [downloadMenuAnchor, setDownloadMenuAnchor] =
+    useState<null | HTMLElement>(null);
+  const isDownloadMenuOpen = Boolean(downloadMenuAnchor);
 
   // Parse overrepresentation results
   const { tableData, filteredData } = useMemo(() => {
@@ -155,6 +170,13 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
     return sortData(dataToSort, sortBy, sortDirection);
   }, [showAllResults, tableData, filteredData, sortBy, sortDirection]);
 
+  // Get all pantherIDs from the filtered/display data
+  const getFilteredPantherIds = () => {
+    return displayData
+      .flatMap((item) => item.mapped_panther_ids)
+      .filter((id, index, self) => self.indexOf(id) === index); // Remove duplicates
+  };
+
   const handleDownloadCSV = (
     pantherIdsToInclude?: string[],
     fileTitle?: string
@@ -198,6 +220,31 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  // Handle menu open/close
+  const handleOpenDownloadMenu = (event: React.MouseEvent<HTMLElement>) => {
+    setDownloadMenuAnchor(event.currentTarget);
+  };
+
+  const handleCloseDownloadMenu = () => {
+    setDownloadMenuAnchor(null);
+  };
+
+  // Download handlers
+  const handleDownloadAll = () => {
+    handleDownloadCSV();
+    handleCloseDownloadMenu();
+  };
+
+  const handleDownloadSignificant = () => {
+    // Always use filteredData (significant results) regardless of current view
+    const significantIds = filteredData
+      .flatMap((item) => item.mapped_panther_ids)
+      .filter((id, index, self) => self.indexOf(id) === index);
+
+    handleDownloadCSV(significantIds, `significant_gene_mappings.csv`);
+    handleCloseDownloadMenu();
   };
 
   // Define table columns
@@ -424,17 +471,36 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
           >
             Back to Input
           </Button>
+
+          {/* Replace the single download button with a dropdown */}
           <Button
             variant="outlined"
             color="primary"
-            onClick={() => {
-              handleDownloadCSV();
-            }}
-            sx={{ mr: 2 }}
+            onClick={handleOpenDownloadMenu}
             disabled={!response}
+            startIcon={<DownloadIcon />}
+            endIcon={<KeyboardArrowDownIcon />}
+            sx={{ mr: 2 }}
           >
-            Download All Mappings
+            Download
           </Button>
+
+          {/* Download options menu */}
+          <Menu
+            anchorEl={downloadMenuAnchor}
+            open={isDownloadMenuOpen}
+            onClose={handleCloseDownloadMenu}
+          >
+            <MenuItem onClick={handleDownloadAll}>
+              <Typography variant="body2">All Mappings</Typography>
+            </MenuItem>
+            <MenuItem onClick={handleDownloadSignificant}>
+              <Typography variant="body2">
+                Only Significant Mappings ({filteredData.length} processes)
+              </Typography>
+            </MenuItem>
+          </Menu>
+
           <Button variant="contained" color="primary" onClick={submitToPanther}>
             View Full Results in PANTHER
           </Button>
