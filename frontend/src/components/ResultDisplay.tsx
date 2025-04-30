@@ -7,17 +7,20 @@ import {
   Tooltip,
   Menu,
   MenuItem,
+  FormControlLabel,
+  Checkbox,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  TableSortLabel,
 } from "@mui/material";
 import InfoIcon from "@mui/icons-material/Info";
 import DownloadIcon from "@mui/icons-material/Download";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
-import Table from "@mui/material/Table";
-import TableBody from "@mui/material/TableBody";
-import TableCell from "@mui/material/TableCell";
-import TableContainer from "@mui/material/TableContainer";
-import TableHead from "@mui/material/TableHead";
-import TableRow from "@mui/material/TableRow";
-import TableSortLabel from "@mui/material/TableSortLabel";
+import SettingsIcon from "@mui/icons-material/Settings";
 import { TableVirtuoso, TableComponents } from "react-virtuoso";
 import { GeneMappingResponse } from "../models";
 import { createResultsTableData } from "../components/utils";
@@ -75,6 +78,9 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
   const [downloadMenuAnchor, setDownloadMenuAnchor] =
     useState<null | HTMLElement>(null);
   const isDownloadMenuOpen = Boolean(downloadMenuAnchor);
+
+  // Add state for download all columns option
+  const [downloadAllColumns, setDownloadAllColumns] = useState(false);
 
   // Helper function to get appropriate term based on annotation dataset
   const getDatasetTerms = (datasetValue: string) => {
@@ -209,8 +215,12 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
     fileTitle?: string
   ) => {
     if (!response) return;
-    // Generate table data using the utility function
-    const tableData = createResultsTableData(response, pantherIdsToInclude);
+    // Generate table data using the utility function - pass in the annotation dataset and download preference
+    const tableData = createResultsTableData(
+      response,
+      pantherIdsToInclude,
+      downloadAllColumns ? undefined : annotationDataset
+    );
 
     // Convert the data to CSV format
     const headers = Object.keys(tableData[0] || {});
@@ -499,7 +509,7 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
             Back to Input
           </Button>
 
-          {/* Replace the single download button with a dropdown */}
+          {/* Download dropdown button */}
           <Button
             variant="outlined"
             color="primary"
@@ -512,28 +522,71 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
             Download
           </Button>
 
-          {/* Download options menu */}
-          <Menu
-            anchorEl={downloadMenuAnchor}
-            open={isDownloadMenuOpen}
-            onClose={handleCloseDownloadMenu}
-          >
-            <MenuItem onClick={handleDownloadAll}>
-              <Typography variant="body2">All Mappings</Typography>
-            </MenuItem>
-            <MenuItem onClick={handleDownloadSignificant}>
-              <Typography variant="body2">
-                Only Significant Mappings ({filteredData.length}{" "}
-                {datasetTermsPlural})
-              </Typography>
-            </MenuItem>
-          </Menu>
-
           <Button variant="contained" color="primary" onClick={submitToPanther}>
             View Full Results in PANTHER
           </Button>
         </Box>
       </Box>
+
+      {/* Advanced Download Options - simplified inline UI */}
+      <Box
+        sx={{
+          mb: 2,
+          display: "flex",
+          alignItems: "center",
+          padding: "8px 12px",
+          backgroundColor: "rgba(0, 0, 0, 0.02)",
+          borderRadius: 1,
+        }}
+      >
+        <SettingsIcon
+          fontSize="small"
+          sx={{ mr: 1, color: "text.secondary" }}
+        />
+        <Typography variant="body2" color="text.secondary" sx={{ mr: 2 }}>
+          Advanced Options:
+        </Typography>
+        <FormControlLabel
+          control={
+            <Checkbox
+              checked={downloadAllColumns}
+              onChange={(e) => setDownloadAllColumns(e.target.checked)}
+              size="small"
+            />
+          }
+          label={
+            <Box sx={{ display: "flex", alignItems: "center" }}>
+              <Typography variant="body2">
+                Include all gene information columns in the downloaded file
+                (PANTHER family, subfamily, etc.)
+              </Typography>
+              <Tooltip title="When enabled, all available gene annotation data will be included in download files, not just data from the selected dataset">
+                <InfoIcon
+                  fontSize="small"
+                  sx={{ ml: 0.5, color: "info.main" }}
+                />
+              </Tooltip>
+            </Box>
+          }
+        />
+      </Box>
+
+      {/* Download options menu */}
+      <Menu
+        anchorEl={downloadMenuAnchor}
+        open={isDownloadMenuOpen}
+        onClose={handleCloseDownloadMenu}
+      >
+        <MenuItem onClick={handleDownloadAll}>
+          <Typography variant="body2">All Mappings</Typography>
+        </MenuItem>
+        <MenuItem onClick={handleDownloadSignificant}>
+          <Typography variant="body2">
+            Only Significant Mappings ({filteredData.length}{" "}
+            {datasetTermsPlural})
+          </Typography>
+        </MenuItem>
+      </Menu>
 
       {/* Overrepresentation Results Table */}
       {tableData.length > 0 && (
