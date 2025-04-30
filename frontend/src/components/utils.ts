@@ -1,4 +1,4 @@
-import { GeneMappingResponse, GeneInfo } from "../models";
+import { GeneMappingResponse } from "../models";
 
 // Interface for the table row structure
 export interface ResultTableRow {
@@ -19,13 +19,19 @@ export interface ResultTableRow {
 }
 
 export const createResultsTableData = (
-  geneMappingResponse: GeneMappingResponse
+  geneMappingResponse: GeneMappingResponse,
+  pantherIdsToInclude?: string[]
 ): ResultTableRow[] => {
   const { rsId_genes_map, panther_gene_info, gene_panther_mapping } =
     geneMappingResponse;
 
   const tableData: ResultTableRow[] = [];
   const processedPairs = new Set<string>(); // To avoid duplicate rows
+
+  // Create a Set from the pantherIdsToInclude array for faster lookups
+  const pantherIdsSet = pantherIdsToInclude
+    ? new Set(pantherIdsToInclude)
+    : null;
 
   // Iterate through each rsID
   for (const rsId in rsId_genes_map) {
@@ -38,6 +44,9 @@ export const createResultsTableData = (
 
       // For each PANTHER ID associated with this gene
       for (const pantherId of pantherIdsForGene) {
+        // Skip if not in the subset (when subset is provided)
+        if (pantherIdsSet && !pantherIdsSet.has(pantherId)) continue;
+
         // Create a unique key for this (rsID, PANTHER_ID) pair
         const pairKey = `${rsId}-${pantherId}`;
 
@@ -80,4 +89,11 @@ export const createResultsTableData = (
   }
 
   return tableData;
+};
+
+export const createSubsetResultsTableData = (
+  geneMappingResponse: GeneMappingResponse,
+  pantherIdsInSubset: string[]
+): ResultTableRow[] => {
+  return createResultsTableData(geneMappingResponse, pantherIdsInSubset);
 };

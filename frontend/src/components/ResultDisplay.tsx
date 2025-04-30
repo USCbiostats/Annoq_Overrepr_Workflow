@@ -1,12 +1,6 @@
-import React, { useMemo, useRef, useState } from "react";
-import {
-  Typography,
-  Paper,
-  Box,
-  Button,
-  Switch,
-  FormControlLabel,
-} from "@mui/material";
+import React, { useMemo, useState } from "react";
+import { Typography, Paper, Box, Button, Tooltip } from "@mui/material";
+import InfoIcon from "@mui/icons-material/Info";
 import Table from "@mui/material/Table";
 import TableBody from "@mui/material/TableBody";
 import TableCell from "@mui/material/TableCell";
@@ -38,6 +32,7 @@ interface OverrepResultItem {
   overUnder: string;
   pValue: number;
   fdr: number;
+  mapped_panther_ids: string[];
 }
 
 // Define column data structure
@@ -72,7 +67,7 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
       return { tableData: [], filteredData: [] };
 
     // Extract the reference and input list info
-    const { reference, input_list, result } = overrepresentationResult.results;
+    const { result } = overrepresentationResult.results;
 
     // Check if we have valid result data
     if (!result || !Array.isArray(result))
@@ -103,6 +98,8 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
           pValue:
             typeof item.pValue === "number" ? +item.pValue.toExponential(2) : 0,
           fdr: typeof item.fdr === "number" ? +item.fdr.toExponential(2) : 0,
+          mapped_panther_ids:
+            item.input_list?.mapped_panther_ids?.split(",") || [],
         };
       });
 
@@ -158,14 +155,13 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
     return sortData(dataToSort, sortBy, sortDirection);
   }, [showAllResults, tableData, filteredData, sortBy, sortDirection]);
 
-  // Ref for the table container to measure available height
-  const tableContainerRef = useRef<HTMLDivElement>(null);
-
-  const handleDownloadCSV = () => {
+  const handleDownloadCSV = (
+    pantherIdsToInclude?: string[],
+    fileTitle?: string
+  ) => {
     if (!response) return;
-
     // Generate table data using the utility function
-    const tableData = createResultsTableData(response);
+    const tableData = createResultsTableData(response, pantherIdsToInclude);
 
     // Convert the data to CSV format
     const headers = Object.keys(tableData[0] || {});
@@ -194,7 +190,10 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute("download", "gene_mapping_results.csv");
+    link.setAttribute(
+      "download",
+      fileTitle ? fileTitle : "gene_mapping_results.csv"
+    );
     link.style.visibility = "hidden";
     document.body.appendChild(link);
     link.click();
@@ -297,7 +296,7 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
             </Typography>
           </TableCell>
           <TableCell
-            colSpan={6}
+            colSpan={columns.length === 8 ? 6 : 5}
             align="center"
             sx={{ borderLeft: "1px solid rgba(224, 224, 224, 1)" }}
           >
@@ -351,6 +350,39 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
             content = (row[column.dataKey] as number).toExponential(2);
           }
 
+          // Make uploadCount clickable for downloading specific mappings
+          if (column.dataKey === "uploadCount") {
+            return (
+              <TableCell
+                key={column.dataKey}
+                align="center"
+                onClick={() => {
+                  if (
+                    row.mapped_panther_ids &&
+                    row.mapped_panther_ids.length > 0
+                  ) {
+                    handleDownloadCSV(
+                      row.mapped_panther_ids,
+                      `${row.process}_gene_mappings.csv`
+                    );
+                  }
+                }}
+                sx={{
+                  cursor: "pointer",
+                  color: "primary.main",
+                  "&:hover": {
+                    textDecoration: "underline",
+                    fontWeight: "bold",
+                  },
+                }}
+              >
+                <Tooltip title="Click to download mappings for this process">
+                  {content as any}
+                </Tooltip>
+              </TableCell>
+            );
+          }
+
           return (
             <TableCell
               key={column.dataKey}
@@ -395,7 +427,9 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
           <Button
             variant="outlined"
             color="primary"
-            onClick={handleDownloadCSV}
+            onClick={() => {
+              handleDownloadCSV();
+            }}
             sx={{ mr: 2 }}
             disabled={!response}
           >
@@ -444,6 +478,15 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
                 ? "Show Significant Only"
                 : "Click here to show all"}
             </Button>
+          </Box>
+
+          {/* Help text for clickable cells */}
+          <Box sx={{ display: "flex", alignItems: "center", mb: 1.5 }}>
+            <InfoIcon fontSize="small" color="info" sx={{ mr: 1 }} />
+            <Typography variant="body2" color="text.secondary">
+              You can click on any number in the "#" column under "Input List"
+              to download gene mappings specific to that biological process.
+            </Typography>
           </Box>
 
           <Paper sx={{ height: 500, width: "100%" }}>
