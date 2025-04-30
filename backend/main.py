@@ -7,6 +7,7 @@ from fastapi import Body, FastAPI, status
 from fastapi.exceptions import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.responses import FileResponse
 
 from src.annoq import get_annoq_df, get_rsid_gene_mapping
 from src.models import GeneMappingsResponse
@@ -20,6 +21,16 @@ from src.query import (
     RsIdListQuery,
     RsIdQuery,
 )
+
+
+class NoCacheStaticFiles(StaticFiles):
+    async def get_response(self, path, scope):
+        response: FileResponse = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
+
 
 warnings.filterwarnings("ignore")
 
@@ -88,4 +99,4 @@ async def gene_mappings(
 
 
 # Add the build folder that contains the react app
-app.mount("/", StaticFiles(directory="dist", html=True))
+app.mount("/", NoCacheStaticFiles(directory="dist", html=True))
