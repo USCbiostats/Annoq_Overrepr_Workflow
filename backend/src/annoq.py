@@ -123,7 +123,10 @@ def create_rs_id_list_query(query: RsIdListQuery) -> Any:
 
 
 def create_ids_query(query: IdsQuery) -> Any:
-    pass
+    filter_fields = {
+        "ids": query.ids,
+    }
+    return generate_gql_download_query("download_SNPs_by_IDs", filter_fields)
 
 
 def create_keyword_query(query: KeywordQuery) -> Any:

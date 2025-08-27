@@ -75,21 +75,22 @@ const TestInputs: React.FC<TestInputsProps> = ({
     } else if (inputType === InputTypes.VCF) {
       const ids = vcfFile
         .split("\n")
+        .filter((element) => {
+          const regex = /^#/;
+          return !regex.test(element) && element;
+        })
         .map((s) => {
           const line = s.trim().split("\t");
-          return line[2];
-        })
-        .filter((s) => {
-          // RdIds are of the form rs1234567
-          // Using a simple regex to match the pattern
-          return s?.match(/^rs\d+$/);
+          return `${line[0].replace("chr", "")}:${line[1]}${line[3]}>${
+            line[4]
+          }`;
         });
 
-      data["rsIdList"] = ids;
+      data["ids"] = ids;
 
       return {
-        input_type: InputTypes.RSIDS,
-        rsIdListQuery: data,
+        input_type: "ids",
+        idsQuery: data,
       };
     } else {
       data["rsIdList"] = process_rsids(rsIds);
@@ -207,7 +208,6 @@ const TestInputs: React.FC<TestInputsProps> = ({
                       <UploadFile />
                       Upload VCF File
                       <input
-                        accept=".txt"
                         style={{ display: "none" }}
                         type="file"
                         onChange={(event) => {
