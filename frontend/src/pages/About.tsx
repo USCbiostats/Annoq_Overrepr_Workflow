@@ -58,14 +58,6 @@ const About: React.FC = () => {
               workflow.
             </Typography>
           </Stack>
-
-          <Typography variant="h6" sx={{ mt: 4 }}>
-            Notes
-          </Typography>
-          <Typography variant="body2" color="text.secondary" paragraph>
-            Additional background and citations will be added once provided by
-            the team.
-          </Typography>
         </Box>
       </Container>
 

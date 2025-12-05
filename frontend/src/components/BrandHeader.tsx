@@ -1,11 +1,12 @@
 import { Box, Container, Link, Stack, Typography } from "@mui/material";
 import Logo from "../logos/SNPWay_logo.svg";
+import PantherLogo from "../logos/Panther Logo.jpg";
 
 const BrandHeader = () => {
   return (
     <Box
       sx={{
-        backgroundColor: "#eef3fb",
+        backgroundColor: "white",
         borderBottom: "1px solid",
         borderColor: "divider",
       }}
@@ -31,21 +32,19 @@ const BrandHeader = () => {
                 height: { xs: 72, sm: 88 },
                 width: "auto",
                 objectFit: "contain",
-                backgroundColor: "white",
-                border: "1px solid",
-                borderColor: "divider",
-                borderRadius: 1,
-                p: 1.5,
-                boxShadow: "0 2px 4px rgba(0,0,0,0.05)",
               }}
             />
             <Box>
-              <Typography variant="h4" sx={{ lineHeight: 1.1 }}>
+              <Typography
+                variant="h4"
+                sx={{ lineHeight: 1.1 }}
+                color="primary.main"
+              >
                 SNPWay
               </Typography>
               <Typography
                 variant="subtitle1"
-                color="text.secondary"
+                color="primary.main"
                 sx={{ maxWidth: 480 }}
               >
                 An easy ride from SNP to function and pathway
@@ -67,22 +66,25 @@ const BrandHeader = () => {
               target="_blank"
               rel="noopener noreferrer"
               underline="hover"
-              sx={{ fontWeight: 700 }}
+              sx={{ fontWeight: 700, fontSize: "1.1rem" }}
             >
               AnnoQ
             </Link>
             <Typography variant="body2" color="text.secondary">
               &
             </Typography>
-            <Link
-              href="https://pantherdb.org/"
-              target="_blank"
-              rel="noopener noreferrer"
-              underline="hover"
-              sx={{ fontWeight: 700 }}
-            >
-              PANTHER
-            </Link>
+            <Box
+              component="img"
+              src={PantherLogo}
+              alt="PANTHER logo"
+              sx={{
+                height: 32,
+                width: "auto",
+                cursor: "pointer",
+                "&:hover": { opacity: 0.8 },
+              }}
+              onClick={() => window.open("https://pantherdb.org/", "_blank")}
+            />
           </Stack>
         </Stack>
       </Container>

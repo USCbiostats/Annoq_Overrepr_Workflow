@@ -170,59 +170,64 @@ function Home() {
         </Fade>
       </Box>
 
-      <Box
-        sx={{
-          borderBottom: "1px solid",
-          borderColor: "divider",
-          backgroundColor: "#f1f5fb",
-        }}
-      >
-        <Container maxWidth="lg" sx={{ py: { xs: 2.5, md: 3 } }}>
-          <Stack
-            direction={{ xs: "column", md: "row" }}
-            spacing={{ xs: 2, md: 3 }}
-            justifyContent="space-between"
-            alignItems={{ xs: "flex-start", md: "center" }}
-          >
-            <Box>
-              <Typography variant="h5" sx={{ mb: 0.5 }}>
-                Gene overrepresentation, step by step
-              </Typography>
-              <Typography
-                variant="body1"
-                color="text.secondary"
-                sx={{ maxWidth: 840 }}
-              >
-                Start with SNPs or rsIDs, collect gene mappings through AnnoQ,
-                then launch PANTHER enrichment without switching tools.
-              </Typography>
-            </Box>
-            <Stack direction="row" spacing={2}>
-              <Button
-                variant="contained"
-                color="primary"
-                onClick={() => {
-                  const el = document.getElementById("snpway-inputs");
-                  if (el) el.scrollIntoView({ behavior: "smooth" });
-                }}
-                sx={{ fontWeight: 700 }}
-              >
-                Start an analysis
-              </Button>
-              <Button
-                variant="outlined"
-                color="secondary"
-                onClick={() => window.open("https://pantherdb.org/", "_blank")}
-              >
-                Visit PANTHER
-              </Button>
-            </Stack>
-          </Stack>
-        </Container>
-      </Box>
-
       <Container maxWidth="lg" sx={{ flexGrow: 1, py: { xs: 3, md: 4 } }}>
-        <Box sx={{ mb: 2 }}>
+        <Box sx={{ px: 0 }}>
+          <Container maxWidth="lg" sx={{ py: { xs: 2.5, md: 3 } }}>
+            <Stack
+              direction={{ xs: "column", md: "row" }}
+              spacing={{ xs: 2, md: 3 }}
+              sx={{ px: 0 }}
+              justifyContent="space-between"
+              alignItems={{ xs: "flex-start", md: "center" }}
+            >
+              <Box>
+                <Typography variant="h5" sx={{ mb: 0.5 }}>
+                  Gene overrepresentation, step by step
+                </Typography>
+                <Typography
+                  variant="body1"
+                  color="text.secondary"
+                  sx={{ maxWidth: 800 }}
+                >
+                  Start with SNPs or rsIDs, collect gene mappings through AnnoQ,
+                  then launch PANTHER enrichment without switching tools.
+                </Typography>
+              </Box>
+              <Stack direction="row" spacing={2}>
+                <Button
+                  variant="contained"
+                  color="primary"
+                  onClick={() => {
+                    const el = document.getElementById("snpway-inputs");
+                    if (el) el.scrollIntoView({ behavior: "smooth" });
+                  }}
+                  sx={{ fontWeight: 700, whiteSpace: "nowrap" }}
+                >
+                  Start an analysis
+                </Button>
+                <Button
+                  variant="outlined"
+                  color="secondary"
+                  onClick={() => window.open("https://annoq.org/", "_blank")}
+                  sx={{ whiteSpace: "nowrap" }}
+                >
+                  Visit AnnoQ
+                </Button>
+                <Button
+                  variant="outlined"
+                  color="secondary"
+                  onClick={() =>
+                    window.open("https://pantherdb.org/", "_blank")
+                  }
+                  sx={{ whiteSpace: "nowrap" }}
+                >
+                  Visit PANTHER
+                </Button>
+              </Stack>
+            </Stack>
+          </Container>
+        </Box>
+        {/* <Box sx={{ mb: 2 }}>
           <Typography variant="h6" sx={{ mb: 0.5 }}>
             SNPWay workflow
           </Typography>
@@ -230,7 +235,7 @@ function Home() {
             Enter your variants, review mappings, and submit the resulting gene
             list directly to PANTHER for overrepresentation testing.
           </Typography>
-        </Box>
+        </Box> */}
 
         {currentStage === 1 ? (
           <Box
