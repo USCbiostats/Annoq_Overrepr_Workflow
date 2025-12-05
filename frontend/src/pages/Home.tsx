@@ -1,18 +1,20 @@
 import { useState } from "react";
 import TestInputs from "../components/TestInputs";
 import TopBar from "../components/TopBar";
+import BrandHeader from "../components/BrandHeader";
 import Alert from "@mui/material/Alert";
 import CircularProgress from "@mui/material/CircularProgress";
 import {
   Typography,
   Container,
-  Paper,
   Box,
   Snackbar,
   AlertTitle,
   LinearProgress,
   Fade,
   Link,
+  Stack,
+  Button,
 } from "@mui/material";
 import { CorrectionType, TestType } from "../constants";
 import { getGeneMappings, getOverrepresentation } from "../apis";
@@ -157,6 +159,7 @@ function Home() {
 
   return (
     <Box sx={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
+      <BrandHeader />
       <TopBar />
 
       <Box
@@ -167,15 +170,79 @@ function Home() {
         </Fade>
       </Box>
 
-      <Container maxWidth="lg" sx={{ flexGrow: 1, py: 2 }}>
+      <Box
+        sx={{
+          borderBottom: "1px solid",
+          borderColor: "divider",
+          backgroundColor: "#f1f5fb",
+        }}
+      >
+        <Container maxWidth="lg" sx={{ py: { xs: 2.5, md: 3 } }}>
+          <Stack
+            direction={{ xs: "column", md: "row" }}
+            spacing={{ xs: 2, md: 3 }}
+            justifyContent="space-between"
+            alignItems={{ xs: "flex-start", md: "center" }}
+          >
+            <Box>
+              <Typography variant="h5" sx={{ mb: 0.5 }}>
+                Gene overrepresentation, step by step
+              </Typography>
+              <Typography
+                variant="body1"
+                color="text.secondary"
+                sx={{ maxWidth: 840 }}
+              >
+                Start with SNPs or rsIDs, collect gene mappings through AnnoQ,
+                then launch PANTHER enrichment without switching tools.
+              </Typography>
+            </Box>
+            <Stack direction="row" spacing={2}>
+              <Button
+                variant="contained"
+                color="primary"
+                onClick={() => {
+                  const el = document.getElementById("snpway-inputs");
+                  if (el) el.scrollIntoView({ behavior: "smooth" });
+                }}
+                sx={{ fontWeight: 700 }}
+              >
+                Start an analysis
+              </Button>
+              <Button
+                variant="outlined"
+                color="secondary"
+                onClick={() => window.open("https://pantherdb.org/", "_blank")}
+              >
+                Visit PANTHER
+              </Button>
+            </Stack>
+          </Stack>
+        </Container>
+      </Box>
+
+      <Container maxWidth="lg" sx={{ flexGrow: 1, py: { xs: 3, md: 4 } }}>
+        <Box sx={{ mb: 2 }}>
+          <Typography variant="h6" sx={{ mb: 0.5 }}>
+            SNPWay workflow
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Enter your variants, review mappings, and submit the resulting gene
+            list directly to PANTHER for overrepresentation testing.
+          </Typography>
+        </Box>
+
         {currentStage === 1 ? (
-          <Paper
-            elevation={3}
+          <Box
+            id="snpway-inputs"
             sx={{
+              border: "1px solid",
+              borderColor: "divider",
+              borderRadius: 1,
+              p: { xs: 3, md: 3.5 },
+              bgcolor: "white",
               position: "relative",
               overflow: "hidden",
-              borderRadius: 2,
-              mb: 3,
             }}
           >
             {isLoading && (
@@ -187,6 +254,8 @@ function Home() {
                   justifyContent: "center",
                   bgcolor: "primary.light",
                   color: "primary.contrastText",
+                  borderRadius: 1,
+                  mb: 2,
                 }}
               >
                 <CircularProgress size={20} color="inherit" sx={{ mr: 1 }} />
@@ -204,7 +273,7 @@ function Home() {
                 setIsLoading(false);
               }}
             />
-          </Paper>
+          </Box>
         ) : (
           <ResultDisplay
             response={response}

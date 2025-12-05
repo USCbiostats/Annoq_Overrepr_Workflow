@@ -2,6 +2,7 @@ import React from "react";
 import { Box, Typography, Button, Container } from "@mui/material";
 import { useNavigate } from "react-router-dom";
 import TopBar from "../components/TopBar";
+import BrandHeader from "../components/BrandHeader";
 import Footer from "../components/Footer";
 
 const NotFound: React.FC = () => {
@@ -9,6 +10,7 @@ const NotFound: React.FC = () => {
 
   return (
     <>
+      <BrandHeader />
       <TopBar />
       <Container maxWidth="md">
         <Box

@@ -1,57 +1,65 @@
 import React from "react";
-import { Box, Container, Typography, Paper, Link, Stack } from "@mui/material";
+import { Box, Container, Link, Stack, Typography } from "@mui/material";
 import TopBar from "../components/TopBar";
+import BrandHeader from "../components/BrandHeader";
 import Footer from "../components/Footer";
 import GitHubIcon from "@mui/icons-material/GitHub";
 
 const Contact: React.FC = () => {
   return (
     <Box sx={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
+      <BrandHeader />
       <TopBar />
 
-      <Container component="main" sx={{ mt: 8, mb: 8, flexGrow: 1 }}>
-        <Paper elevation={3} sx={{ p: 4 }}>
-          <Typography variant="h4" component="h1" gutterBottom align="center">
-            Contact Us
+      <Container
+        component="main"
+        maxWidth="lg"
+        sx={{ mt: 4, mb: 6, flexGrow: 1 }}
+      >
+        <Box
+          sx={{
+            border: "1px solid",
+            borderColor: "divider",
+            borderRadius: 1,
+            p: { xs: 3, md: 4 },
+            bgcolor: "white",
+          }}
+        >
+          <Typography variant="h4" component="h1" gutterBottom sx={{ mb: 1 }}>
+            Support
+          </Typography>
+          <Typography variant="body1" color="text.secondary" paragraph>
+            We welcome feedback, issues, and collaboration. The GitHub tracker
+            is the fastest way to reach us.
           </Typography>
 
-          <Typography variant="body1" paragraph sx={{ mt: 3 }}>
-            We welcome your feedback, questions, and suggestions about this
-            tool. The best way to reach us is through our GitHub repository.
-          </Typography>
+          <Stack
+            spacing={2}
+            direction={{ xs: "column", sm: "row" }}
+            alignItems="center"
+            sx={{ mt: 2 }}
+          >
+            <GitHubIcon sx={{ fontSize: 48 }} />
+            <Box>
+              <Typography variant="h6">GitHub repository</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Submit issues, feature requests, or pull requests here:
+              </Typography>
+              <Link
+                href="https://github.com/USCbiostats/Annoq_Overrepr_Workflow"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                github.com/USCbiostats/Annoq_Overrepr_Workflow
+              </Link>
+            </Box>
+          </Stack>
 
-          <Box sx={{ display: "flex", justifyContent: "center", mt: 4, mb: 4 }}>
-            <Paper elevation={2} sx={{ p: 4, maxWidth: 500 }}>
-              <Stack spacing={2} alignItems="center">
-                <GitHubIcon sx={{ fontSize: 60 }} />
-                <Typography variant="h6" gutterBottom>
-                  GitHub Repository
-                </Typography>
-                <Typography variant="body1" align="center">
-                  Please submit issues, feature requests, or contributions
-                  through our GitHub repository:
-                </Typography>
-                <Link
-                  href="https://github.com/USCbiostats/Annoq_Overrepr_Workflow"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  sx={{ mt: 1 }}
-                >
-                  github.com/USCbiostats/Annoq_Overrepr_Workflow
-                </Link>
-                <Typography variant="body2" sx={{ mt: 2 }}>
-                  For bug reports, please include detailed steps to reproduce
-                  the issue and any relevant error messages.
-                </Typography>
-              </Stack>
-            </Paper>
-          </Box>
-
-          <Typography variant="body1" paragraph sx={{ mt: 2 }}>
-            This is an open-source project maintained by researchers at the
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 3 }}>
+            This open-source project is maintained by researchers at the
             University of Southern California.
           </Typography>
-        </Paper>
+        </Box>
       </Container>
 
       <Footer />

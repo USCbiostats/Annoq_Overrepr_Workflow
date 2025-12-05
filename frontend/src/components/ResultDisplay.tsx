@@ -483,24 +483,46 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
   };
 
   return (
-    <Paper elevation={3} sx={{ p: 3, mb: 3, borderRadius: 2 }}>
+    <Paper
+      elevation={0}
+      sx={{
+        p: { xs: 3, md: 4 },
+        mb: 3,
+        borderRadius: 2,
+        border: "1px solid",
+        borderColor: "divider",
+      }}
+    >
       <Box
         sx={{
           display: "flex",
           justifyContent: "space-between",
           mb: 2,
           alignItems: "center",
+          flexWrap: "wrap",
+          gap: 2,
         }}
       >
-        <Typography variant="h5">Results</Typography>
+        <Box>
+          <Typography variant="h5">Results</Typography>
+          <Typography variant="body2" color="text.secondary">
+            {Datasets.find((dataset) => dataset.value === annotationDataset)
+              ?.name || annotationDataset}
+            {"  a0|  a0"}
+            {correctionType === CorrectionType.BONFERRONI
+              ? "Bonferroni"
+              : "FDR"}{" "}
+            correction
+          </Typography>
+        </Box>
         <Box>
           <Button
-            variant="outlined"
+            variant="text"
             color="secondary"
             onClick={resetAnalysis}
-            sx={{ mr: 2 }}
+            sx={{ mr: 1 }}
           >
-            Back to Input
+            Back to input
           </Button>
 
           {/* Download dropdown button */}
@@ -511,13 +533,13 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
             disabled={!response}
             startIcon={<DownloadIcon />}
             endIcon={<KeyboardArrowDownIcon />}
-            sx={{ mr: 2 }}
+            sx={{ mr: 1 }}
           >
             Download
           </Button>
 
           <Button variant="contained" color="primary" onClick={submitToPanther}>
-            View Full Results in PANTHER
+            View full results in PANTHER
           </Button>
         </Box>
       </Box>

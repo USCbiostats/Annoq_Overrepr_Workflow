@@ -13,6 +13,7 @@ import {
   Collapse,
   Typography,
   Stack,
+  Box,
 } from "@mui/material";
 import { CorrectionType, InputTypes, TestType, Datasets } from "../constants";
 import { process_rsids } from "../utils";
@@ -139,22 +140,26 @@ const TestInputs: React.FC<TestInputsProps> = ({
   };
 
   return (
-    <Stack spacing={2} style={{ padding: "16px" }}>
-      <Typography variant="h6">Test Inputs</Typography>
+    <Stack spacing={3}>
+      <Box>
+        <Typography variant="h5" sx={{ mb: 0.5 }}>
+          Prepare your input
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          Choose how you would like to provide SNP data, then pick the
+          annotation dataset and statistical settings.
+        </Typography>
+      </Box>
 
       <form>
         <FormGroup>
-          <fieldset
-            disabled={isLoading}
-            style={{ border: "none", padding: "0px" }}
-          >
+          <fieldset disabled={isLoading} style={{ border: "none", padding: 0 }}>
             <Stack spacing={3}>
-              <FormControl component="fieldset" disabled={isLoading}>
-                <InputLabel id="type-label">Retrieve SNP Data By</InputLabel>
+              <FormControl component="fieldset" disabled={isLoading} fullWidth>
+                <InputLabel id="type-label">Retrieve SNP data by</InputLabel>
                 <Select
-                  style={{ width: "30%" }}
                   labelId="type-label"
-                  label="Retrieve SNP Data By"
+                  label="Retrieve SNP data by"
                   value={inputType}
                   onChange={(e) => {
                     if (e.target.value === InputTypes.RSIDS) {
@@ -170,43 +175,47 @@ const TestInputs: React.FC<TestInputsProps> = ({
                     setInputType(e.target.value as InputTypes);
                   }}
                 >
-                  <MenuItem value={InputTypes.VCF}>VCF File</MenuItem>
+                  <MenuItem value={InputTypes.VCF}>VCF file</MenuItem>
                   <MenuItem value={InputTypes.CHROMOSOME}>Chromosome</MenuItem>
-                  <MenuItem value={InputTypes.RSIDS}>RsIds</MenuItem>
+                  <MenuItem value={InputTypes.RSIDS}>rsIDs</MenuItem>
                 </Select>
               </FormControl>
+
               {inputType === InputTypes.CHROMOSOME ? (
-                <Stack direction={"row"} spacing={2}>
+                <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
                   <TextField
                     label="Chromosome"
                     value={chromosome}
                     onChange={(e) => setChromosome(e.target.value)}
+                    fullWidth
                   />
                   <TextField
-                    label="Start Position"
+                    label="Start position"
                     value={startPosition}
                     onChange={(e) => setStartPosition(e.target.value)}
+                    fullWidth
                   />
                   <TextField
-                    label="End Position"
+                    label="End position"
                     value={endPosition}
                     onChange={(e) => setEndPosition(e.target.value)}
+                    fullWidth
                   />
                 </Stack>
               ) : inputType === InputTypes.VCF ? (
-                <Stack spacing={1}>
+                <Stack spacing={1.5}>
                   <TextField
-                    label="VCF File"
+                    label="VCF file"
                     value={vcfFile}
                     onChange={(e) => setVcfFile(e.target.value)}
                     multiline
-                    rows={4}
-                    placeholder="Enter VCF file content"
+                    rows={5}
+                    placeholder="Paste VCF content"
                   />
-                  <Stack direction={"row"} spacing={2}>
+                  <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
                     <Button variant="outlined" component="label">
                       <UploadFile />
-                      Upload VCF File
+                      Upload VCF file
                       <input
                         style={{ display: "none" }}
                         type="file"
@@ -220,7 +229,7 @@ const TestInputs: React.FC<TestInputsProps> = ({
                       color="warning"
                       onClick={() => setVcfFile(SAMPLE_VCF_FILE)}
                     >
-                      Sample VCF File
+                      Sample VCF file
                     </Button>
                     <Button
                       variant="outlined"
@@ -232,19 +241,19 @@ const TestInputs: React.FC<TestInputsProps> = ({
                   </Stack>
                 </Stack>
               ) : (
-                <Stack spacing={1}>
+                <Stack spacing={1.5}>
                   <TextField
-                    label="RsIds"
+                    label="rsIDs"
                     value={rsIds}
                     onChange={(e) => setRsIds(e.target.value)}
                     multiline
-                    rows={4}
-                    placeholder="Enter rsIds separated by commas, spaces or new lines"
+                    rows={5}
+                    placeholder="Enter rsIDs separated by commas, spaces, or new lines"
                   />
-                  <Stack direction={"row"} spacing={2}>
+                  <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
                     <Button variant="outlined" component="label">
                       <UploadFile />
-                      Populate from File
+                      Populate from file
                       <input
                         accept=".txt, .csv, .tsv"
                         style={{ display: "none" }}
@@ -259,7 +268,7 @@ const TestInputs: React.FC<TestInputsProps> = ({
                       color="warning"
                       onClick={() => setRsIds(SAMPLE_RSID_LIST)}
                     >
-                      Sample rsID List
+                      Sample rsID list
                     </Button>
                     <Button
                       variant="outlined"
@@ -271,14 +280,26 @@ const TestInputs: React.FC<TestInputsProps> = ({
                   </Stack>
                 </Stack>
               )}
-              <Stack direction={"row"}>
-                <FormControl component={"fieldset"} disabled={isLoading}>
+
+              <Typography
+                variant="subtitle2"
+                color="text.secondary"
+                sx={{ mt: 0.5 }}
+              >
+                Select an annotation dataset to analyze.
+              </Typography>
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+                <FormControl
+                  component={"fieldset"}
+                  disabled={isLoading}
+                  fullWidth
+                >
                   <InputLabel id="test-dataset-label">
-                    Annotation Data Set
+                    Annotation data set
                   </InputLabel>
                   <Select
                     labelId="test-dataset-label"
-                    label="Annotation Data Set"
+                    label="Annotation data set"
                     value={annotDataSet}
                     onChange={(e) => setAnnotDataSet(e.target.value)}
                   >
@@ -290,6 +311,7 @@ const TestInputs: React.FC<TestInputsProps> = ({
                   </Select>
                 </FormControl>
               </Stack>
+
               <FormControlLabel
                 control={
                   <Checkbox
@@ -297,15 +319,20 @@ const TestInputs: React.FC<TestInputsProps> = ({
                     onChange={() => setAdvancedOptions(!advancedOptions)}
                   />
                 }
-                label="See Advanced Options"
+                label="Show advanced options"
               />
+
               <Collapse in={advancedOptions}>
-                <Stack direction={"row"} spacing={2}>
-                  <FormControl component={"fieldset"} disabled={isLoading}>
-                    <InputLabel id="test-type-label">Test Type</InputLabel>
+                <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+                  <FormControl
+                    component={"fieldset"}
+                    disabled={isLoading}
+                    fullWidth
+                  >
+                    <InputLabel id="test-type-label">Test type</InputLabel>
                     <Select
                       labelId="test-type-label"
-                      label="Test Type"
+                      label="Test type"
                       value={testType}
                       onChange={(e) => setTestType(e.target.value as TestType)}
                     >
@@ -315,7 +342,11 @@ const TestInputs: React.FC<TestInputsProps> = ({
                       <MenuItem value={TestType.BINOMIAL}>Binomial</MenuItem>
                     </Select>
                   </FormControl>
-                  <FormControl component={"fieldset"} disabled={isLoading}>
+                  <FormControl
+                    component={"fieldset"}
+                    disabled={isLoading}
+                    fullWidth
+                  >
                     <InputLabel id="correction-label">Correction</InputLabel>
                     <Select
                       labelId="correction-label"
@@ -326,7 +357,7 @@ const TestInputs: React.FC<TestInputsProps> = ({
                       }
                     >
                       <MenuItem value={CorrectionType.FDR}>
-                        Calculate False Discovery Rate
+                        Calculate false discovery rate
                       </MenuItem>
                       <MenuItem value={CorrectionType.BONFERRONI}>
                         Use the Bonferroni correction for multiple testing
@@ -338,6 +369,7 @@ const TestInputs: React.FC<TestInputsProps> = ({
                   </FormControl>
                 </Stack>
               </Collapse>
+
               <Stack alignItems={"start"} direction="row" spacing={2}>
                 <Button
                   variant="contained"
@@ -345,15 +377,15 @@ const TestInputs: React.FC<TestInputsProps> = ({
                   onClick={handleRunTest}
                   disabled={submitDisabled}
                 >
-                  <Typography variant="button">Run Test</Typography>
+                  Run test
                 </Button>
                 <Button
-                  variant="outlined"
+                  variant="text"
                   color="secondary"
                   onClick={handleReset}
                   disabled={isLoading}
                 >
-                  <Typography variant="button">Reset</Typography>
+                  Reset
                 </Button>
               </Stack>
             </Stack>
