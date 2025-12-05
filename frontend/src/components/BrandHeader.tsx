@@ -1,5 +1,5 @@
 import { Box, Container, Link, Stack, Typography } from "@mui/material";
-import Logo from "../../images/SNPWay_logo.svg";
+import Logo from "../../public/SNPWay_logo.svg";
 
 const BrandHeader = () => {
   return (

@@ -341,7 +341,7 @@ function Home() {
             >
               Annoq
             </Link>{" "}
-            version 1.11 and{" "}
+            version 1.3 and{" "}
             <Link
               href="https://pantherdb.org/"
               target="_blank"
