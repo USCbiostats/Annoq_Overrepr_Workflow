@@ -5,6 +5,9 @@ import httpx
 from src.models import GeneInfo
 
 
+PANTHER_GENEINFO_BATCH_SIZE = 1000
+
+
 async def get_panther_info(
     gene_list: list[str],
 ) -> Tuple[dict[str, GeneInfo], dict[str, list[str]]]:
@@ -17,21 +20,46 @@ async def get_panther_info(
     Returns:
         A tuple of (panther_gene_info, gene_panther_mapping).
     """
-    # Create the gene input list for the API
-    gene_input_list = ",".join(gene_list)
-
-    # Call the PANTHER API
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            "https://pantherdb.org/services/oai/pantherdb/geneinfo",
-            data={"geneInputList": gene_input_list, "organism": "9606"},
-        )
-        response.raise_for_status()
-        data = response.json()
-
-    # Parse the response
     panther_gene_info: dict[str, GeneInfo] = {}
     gene_panther_mapping: dict[str, list[str]] = {}
+
+    if not gene_list:
+        return panther_gene_info, gene_panther_mapping
+
+    async with httpx.AsyncClient() as client:
+        for start in range(0, len(gene_list), PANTHER_GENEINFO_BATCH_SIZE):
+            batch_index = (start // PANTHER_GENEINFO_BATCH_SIZE) + 1
+            chunk = gene_list[start : start + PANTHER_GENEINFO_BATCH_SIZE]
+            gene_input_list = ",".join(chunk)
+
+            try:
+                response = await client.post(
+                    "https://pantherdb.org/services/oai/pantherdb/geneinfo",
+                    data={"geneInputList": gene_input_list, "organism": "9606"},
+                )
+                response.raise_for_status()
+            except httpx.HTTPError as exc:
+                raise RuntimeError(
+                    "Failed to fetch PANTHER geneinfo for "
+                    f"batch {batch_index} ({len(chunk)} genes): {exc}"
+                ) from exc
+
+            data = response.json()
+            _merge_panther_response(
+                data=data,
+                panther_gene_info=panther_gene_info,
+                gene_panther_mapping=gene_panther_mapping,
+            )
+
+    return panther_gene_info, gene_panther_mapping
+
+
+def _merge_panther_response(
+    data: dict,
+    panther_gene_info: dict[str, GeneInfo],
+    gene_panther_mapping: dict[str, list[str]],
+) -> None:
+    """Merge one PANTHER geneinfo payload into shared response dictionaries."""
 
     # Check if there are mapped genes in the response
     if (
@@ -42,7 +70,7 @@ async def get_panther_info(
         mapped_genes: list[dict] = data["search"]["mapped_genes"]["gene"]
 
         if not mapped_genes:
-            return panther_gene_info, gene_panther_mapping
+            return
 
         if not isinstance(mapped_genes, list):
             mapped_genes = [mapped_genes]
@@ -129,9 +157,8 @@ async def get_panther_info(
                 gene_id = gene_id.strip()
                 if gene_id not in gene_panther_mapping:
                     gene_panther_mapping[gene_id] = []
-                gene_panther_mapping[gene_id].append(panther_id)
-
-    return panther_gene_info, gene_panther_mapping
+                if panther_id and panther_id not in gene_panther_mapping[gene_id]:
+                    gene_panther_mapping[gene_id].append(panther_id)
 
 
 def _extract_annotation_ids(annotation_type: dict) -> str:

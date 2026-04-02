@@ -1,5 +1,7 @@
 import React, { useMemo, useState } from "react";
 import {
+  Alert,
+  CircularProgress,
   Typography,
   Paper,
   Box,
@@ -21,9 +23,14 @@ import InfoIcon from "@mui/icons-material/Info";
 import DownloadIcon from "@mui/icons-material/Download";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import { TableVirtuoso, TableComponents } from "react-virtuoso";
-import { GeneMappingResponse } from "../models";
+import {
+  GeneMappingDownloadData,
+  GeneMappingResponse,
+  PantherGeneInfoResponse,
+} from "../models";
 import { createResultsTableData } from "../components/utils";
 import { CorrectionType, Datasets } from "../constants";
+import { getPantherGeneInfo } from "../apis";
 
 interface ResultDisplayProps {
   response: GeneMappingResponse | null;
@@ -77,6 +84,10 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
   const [downloadMenuAnchor, setDownloadMenuAnchor] =
     useState<null | HTMLElement>(null);
   const isDownloadMenuOpen = Boolean(downloadMenuAnchor);
+  const [downloadMessage, setDownloadMessage] = useState<string | null>(null);
+  const [isPreparingDownload, setIsPreparingDownload] = useState(false);
+  const [pantherGeneInfoResponse, setPantherGeneInfoResponse] =
+    useState<PantherGeneInfoResponse | null>(null);
 
   // Add state for download all columns option
   const [downloadAllColumns, setDownloadAllColumns] = useState(false);
@@ -204,17 +215,70 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
     return sortData(dataToSort, sortBy, sortDirection);
   }, [showAllResults, tableData, filteredData, sortBy, sortDirection]);
 
-  const handleDownloadCSV = (
+  const getDownloadData = async (): Promise<GeneMappingDownloadData | null> => {
+    if (!response) {
+      setDownloadMessage("No mapping response is available to download.");
+      return null;
+    }
+
+    if (pantherGeneInfoResponse) {
+      return {
+        ...response,
+        ...pantherGeneInfoResponse,
+      };
+    }
+
+    setIsPreparingDownload(true);
+    setDownloadMessage(
+      "Preparing your download. This can take longer for large gene lists."
+    );
+
+    try {
+      const lazyPantherData = await getPantherGeneInfo(response.gene_list);
+      setPantherGeneInfoResponse(lazyPantherData);
+      setDownloadMessage(null);
+      return {
+        ...response,
+        ...lazyPantherData,
+      };
+    } catch (error: any) {
+      setDownloadMessage(
+        error?.message || "Failed to prepare download data. Please try again."
+      );
+      return null;
+    } finally {
+      setIsPreparingDownload(false);
+    }
+  };
+
+  const handleDownloadCSV = async (
     pantherIdsToInclude?: string[],
     fileTitle?: string
   ) => {
-    if (!response) return;
+    if (isPreparingDownload) {
+      return;
+    }
+
+    const downloadData = await getDownloadData();
+    if (!downloadData) {
+      return;
+    }
+
+    setDownloadMessage(null);
+
     // Generate table data using the utility function - pass in the annotation dataset and download preference
     const tableData = createResultsTableData(
-      response,
+      downloadData,
       pantherIdsToInclude,
       downloadAllColumns ? undefined : annotationDataset
     );
+
+    if (tableData.length === 0) {
+      setDownloadMessage(
+        "No rows matched this download selection. Try downloading all mappings or changing filters."
+      );
+      return;
+    }
 
     // Convert the data to CSV format
     const headers = Object.keys(tableData[0] || {});
@@ -264,7 +328,7 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
 
   // Download handlers
   const handleDownloadAll = () => {
-    handleDownloadCSV();
+    void handleDownloadCSV();
     handleCloseDownloadMenu();
   };
 
@@ -274,9 +338,24 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
       .flatMap((item) => item.mapped_panther_ids)
       .filter((id, index, self) => self.indexOf(id) === index);
 
-    handleDownloadCSV(significantIds, `significant_gene_mappings.csv`);
+    if (significantIds.length === 0) {
+      setDownloadMessage(
+        "No significant categories are available for download with the current settings."
+      );
+      handleCloseDownloadMenu();
+      return;
+    }
+
+    void handleDownloadCSV(significantIds, `significant_gene_mappings.csv`);
     handleCloseDownloadMenu();
   };
+
+  const correctionLabel =
+    correctionType === CorrectionType.BONFERRONI
+      ? "Bonferroni"
+      : correctionType === CorrectionType.FDR
+      ? "FDR"
+      : "No";
 
   // Define table columns
   const columns: ColumnData[] = [
@@ -439,7 +518,7 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
                     row.mapped_panther_ids &&
                     row.mapped_panther_ids.length > 0
                   ) {
-                    handleDownloadCSV(
+                    void handleDownloadCSV(
                       row.mapped_panther_ids,
                       `${row.process}_gene_mappings.csv`
                     );
@@ -508,10 +587,8 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
           <Typography variant="body2" color="text.secondary">
             {Datasets.find((dataset) => dataset.value === annotationDataset)
               ?.name || annotationDataset}
-            {"  a0|  a0"}
-            {correctionType === CorrectionType.BONFERRONI
-              ? "Bonferroni"
-              : "FDR"}{" "}
+            {" | "}
+            {correctionLabel}{" "}
             correction
           </Typography>
         </Box>
@@ -530,12 +607,18 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
             variant="outlined"
             color="primary"
             onClick={handleOpenDownloadMenu}
-            disabled={!response}
-            startIcon={<DownloadIcon />}
+            disabled={!response || isPreparingDownload}
+            startIcon={
+              isPreparingDownload ? (
+                <CircularProgress size={18} color="inherit" />
+              ) : (
+                <DownloadIcon />
+              )
+            }
             endIcon={<KeyboardArrowDownIcon />}
             sx={{ mr: 1 }}
           >
-            Download
+            {isPreparingDownload ? "Preparing..." : "Download"}
           </Button>
 
           <Button variant="contained" color="primary" onClick={submitToPanther}>
@@ -543,6 +626,16 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
           </Button>
         </Box>
       </Box>
+
+      {downloadMessage && (
+        <Alert
+          severity="info"
+          sx={{ mb: 2 }}
+          onClose={() => setDownloadMessage(null)}
+        >
+          {downloadMessage}
+        </Alert>
+      )}
 
       {/* Replace the prominent advanced options banner with subtle collapsible section */}
       <Box

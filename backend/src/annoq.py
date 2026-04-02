@@ -29,14 +29,68 @@ async def get_annoq_df(input_type: InputType, query: Any) -> pd.DataFrame:
     return df
 
 
-def get_rsid_gene_mapping(annoq_df: pd.DataFrame) -> dict[str, list[str]]:
+def _normalize_chr_label(raw_chr: Any) -> str:
+    value = str(raw_chr).strip()
+    if not value:
+        return ""
+    value = value.replace("CHR", "chr").replace("Chr", "chr")
+    if value.lower().startswith("chr"):
+        suffix = value[3:].strip()
+        return f"chr{suffix}" if suffix else ""
+    return f"chr{value}"
+
+
+def _variant_id_to_chr_pos(variant_id: str) -> str:
+    text = variant_id.strip()
+    if not text or ":" not in text:
+        return ""
+    chrom, rest = text.split(":", 1)
+    position_chars: list[str] = []
+    for ch in rest:
+        if ch.isdigit():
+            position_chars.append(ch)
+        else:
+            break
+    position = "".join(position_chars)
+    normalized_chr = _normalize_chr_label(chrom)
+    if not normalized_chr or not position:
+        return ""
+    return f"{normalized_chr}:{position}"
+
+
+def _row_to_chr_pos(row: pd.Series) -> str:
+    if "chr" not in row or "pos" not in row:
+        return ""
+
+    chrom = _normalize_chr_label(row["chr"])
+    pos = str(row["pos"]).strip()
+    if pos.endswith(".0"):
+        pos = pos[:-2]
+
+    if not chrom or not pos:
+        return ""
+    return f"{chrom}:{pos}"
+
+
+def get_rsid_gene_mapping(
+    annoq_df: pd.DataFrame,
+    force_chr_pos_keys: bool = False,
+) -> dict[str, list[str]]:
     gemap: dict[str, list[str]] = {}
     for _, row in annoq_df.iterrows():
-        # Get the rsID
-        rsid = row["rs_dbSNP151"]
+        key = ""
+        if force_chr_pos_keys:
+            key = _row_to_chr_pos(row)
+        else:
+            # Get the rsID
+            key = str(row["rs_dbSNP151"]).strip()
+
+        if not key:
+            continue
+
         # Get the genes
         genes: list[str] = []
-        for idx, (gene_col, gene_extractor) in enumerate(GENE_COLS):
+        for gene_col, gene_extractor in GENE_COLS:
             single_type_genes = gene_extractor(row[gene_col])
 
             # Add the genes to the set
@@ -44,8 +98,16 @@ def get_rsid_gene_mapping(annoq_df: pd.DataFrame) -> dict[str, list[str]]:
 
         # Remove empty strings
         genes = [gene.strip() for gene in genes if len(gene.strip()) > 0]
-        # Add the rsID and genes to the mapping dictionary
-        gemap[rsid] = list(set(genes))
+        if not genes:
+            continue
+
+        # Add the key and genes to the mapping dictionary
+        if key in gemap:
+            merged = set(gemap[key])
+            merged.update(genes)
+            gemap[key] = list(merged)
+        else:
+            gemap[key] = list(set(genes))
     return gemap
 
 
@@ -69,7 +131,7 @@ def create_gql_query(input_type: InputType, query: Any) -> Any:
 
 
 def _get_query_fields() -> list[str]:
-    return [i[0] for i in (GENE_COLS + [("rs_dbSNP151",)])]
+    return ["chr", "pos"] + [i[0] for i in (GENE_COLS + [("rs_dbSNP151",)])]
 
 
 def generate_gql_download_query(
@@ -94,8 +156,12 @@ def generate_gql_download_query(
 
 
 def create_chromosome_query(query: ChromosomeQuery) -> Any:
+    normalized_chr = str(query.chr).strip()
+    if normalized_chr.lower().startswith("chr"):
+        normalized_chr = normalized_chr[3:]
+
     filter_fields = {
-        "chr": query.chr,
+        "chr": normalized_chr,
         "start": query.start,
         "end": query.end,
     }

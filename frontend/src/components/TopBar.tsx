@@ -55,13 +55,23 @@ export default function TopBar() {
             </Button>
             <Button
               component={Link}
-              to="/contact"
+              to="/tutorial"
               variant="text"
               size="medium"
               disableRipple
-              sx={linkStyles("/contact")}
+              sx={linkStyles("/tutorial")}
             >
-              Support
+              Tutorial
+            </Button>
+            <Button
+              component={Link}
+              to="/api"
+              variant="text"
+              size="medium"
+              disableRipple
+              sx={linkStyles("/api")}
+            >
+              API
             </Button>
           </Stack>
         </Stack>

@@ -17,7 +17,11 @@ import {
   Button,
 } from "@mui/material";
 import { CorrectionType, TestType } from "../constants";
-import { getGeneMappings, getOverrepresentation } from "../apis";
+import {
+  getGeneMappings,
+  getOverrepresentation,
+  MAX_OVERREP_GENE_COUNT,
+} from "../apis";
 import Footer from "../components/Footer";
 import { GeneMappingResponse } from "../models";
 import ResultDisplay from "../components/ResultDisplay";
@@ -60,6 +64,15 @@ function Home() {
         return;
       }
 
+      if (response.gene_list.length > MAX_OVERREP_GENE_COUNT) {
+        setError(
+          "We support a maximum of 100,000 unique genes for PANTHER overrepresentation. " +
+            `Your input produced ${response.gene_list.length.toLocaleString()} unique genes. ` +
+            "Please narrow the query range and try again."
+        );
+        return;
+      }
+
       const overrepresentationResponse = await getOverrepresentation(
         response.gene_list.join(","),
         dataset,
@@ -81,7 +94,7 @@ function Home() {
       setCurrentStage(2);
       setSuccess(true);
     } catch (error: any) {
-      setError("Error occurred while fetching data. Please try again.");
+      setError(error?.message || "Error occurred while fetching data. Please try again.");
     } finally {
       setIsLoading(false);
     }

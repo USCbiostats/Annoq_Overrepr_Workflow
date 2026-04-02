@@ -1,4 +1,23 @@
-import { GeneMappingResponse } from "./models";
+import { GeneMappingResponse, PantherGeneInfoResponse } from "./models";
+
+export const MAX_OVERREP_GENE_COUNT = 100000;
+
+const parseJsonResponse = async <T>(response: Response): Promise<T> => {
+  if (!response.ok) {
+    let detail = `Request failed with status ${response.status}`;
+    try {
+      const errorData = await response.json();
+      if (errorData?.detail) {
+        detail = String(errorData.detail);
+      }
+    } catch {
+      // Keep the default message when the body is not JSON.
+    }
+    throw new Error(detail);
+  }
+
+  return (await response.json()) as T;
+};
 
 export const getGeneMappings = async (
   payload: any
@@ -13,7 +32,24 @@ export const getGeneMappings = async (
       body: JSON.stringify(payload),
     }
   );
-  return await response.json();
+  return parseJsonResponse<GeneMappingResponse>(response);
+};
+
+export const getPantherGeneInfo = async (
+  geneList: string[]
+): Promise<PantherGeneInfoResponse> => {
+  const response = await fetch(
+    `${import.meta.env.VITE_BACKEND_BASE_URL ?? ""}/panther_gene_info`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ gene_list: geneList }),
+    }
+  );
+
+  return parseJsonResponse<PantherGeneInfoResponse>(response);
 };
 
 export const getOverrepresentation = async (
@@ -40,5 +76,5 @@ export const getOverrepresentation = async (
       body: new URLSearchParams(payload),
     }
   );
-  return await response.json();
+  return parseJsonResponse<any>(response);
 };

@@ -50,6 +50,16 @@ class GeneMappingsResponse(BaseModel):
         ..., description="Mapping of rsId to genes"
     )
 
+
+class PantherGeneInfoRequest(BaseModel):
+    """Request model for PANTHER geneinfo lookups."""
+
+    gene_list: list[str] = Field(..., description="List of genes to annotate")
+
+
+class PantherGeneInfoResponse(BaseModel):
+    """Response model for PANTHER gene metadata lookups."""
+
     panther_gene_info: dict[str, GeneInfo] = Field(
         ...,
         description="Mapping of PANTHER Gene ID to its information.",
