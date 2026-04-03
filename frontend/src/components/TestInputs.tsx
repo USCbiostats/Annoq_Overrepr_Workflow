@@ -63,9 +63,9 @@ const TestInputs: React.FC<TestInputsProps> = ({
     return withoutPrefix;
   };
 
-  const toAnnoqVariantId = (rawChromosome: string, pos: string, ref: string, alt: string): string => {
+  const toChrPosId = (rawChromosome: string, pos: string): string => {
     const chromosome = normalizeChromosome(rawChromosome);
-    return `${chromosome}:${pos}${ref}>${alt}`;
+    return `${chromosome}:${pos}`;
   };
 
   const parseVcfToIds = (
@@ -80,46 +80,41 @@ const TestInputs: React.FC<TestInputsProps> = ({
         continue;
       }
 
-      // Prefer tab parsing so empty VCF ID field is preserved.
+      // Prefer tab parsing so empty fields are preserved.
       let chrom = "";
       let pos = "";
-      let ref = "";
-      let alt = "";
 
       const tabFields = trimmed.split("\t");
-      if (tabFields.length >= 5) {
-        // VCF columns: CHROM POS ID REF ALT ...
+      if (tabFields.length >= 2) {
+        // VCF columns: CHROM POS ...
         chrom = tabFields[0];
         pos = tabFields[1];
-        ref = tabFields[3];
-        alt = tabFields[4];
       } else {
         // Fallback for whitespace-separated rows (tabs replaced by spaces, etc.).
         const wsFields = trimmed.split(/\s+/);
-        if (wsFields.length >= 5) {
-          // CHROM POS ID REF ALT ... (ID can be '.')
+        if (wsFields.length >= 2) {
+          // CHROM POS ...
           chrom = wsFields[0];
           pos = wsFields[1];
-          ref = wsFields[3];
-          alt = wsFields[4];
-        } else if (wsFields.length >= 4) {
-          // CHROM POS REF ALT
-          chrom = wsFields[0];
-          pos = wsFields[1];
-          ref = wsFields[2];
-          alt = wsFields[3];
         } else {
           invalidRows += 1;
           continue;
         }
       }
 
-      if (!chrom || !pos || !ref || !alt || ref === "." || alt === ".") {
+      const normalizedChrom = normalizeChromosome(chrom);
+      const normalizedPos = pos.trim();
+
+      if (
+        !normalizedChrom ||
+        !normalizedPos ||
+        !/^\d+$/.test(normalizedPos)
+      ) {
         invalidRows += 1;
         continue;
       }
 
-      ids.push(toAnnoqVariantId(chrom, pos, ref, alt));
+      ids.push(toChrPosId(normalizedChrom, normalizedPos));
     }
 
     return { ids, invalidRows };
@@ -146,19 +141,21 @@ const TestInputs: React.FC<TestInputsProps> = ({
       };
     } else if (inputType === InputTypes.VCF) {
       const { ids, invalidRows } = parseVcfToIds(vcfFile);
-      if (ids.length === 0) {
+      const uniqueIds = Array.from(new Set(ids));
+
+      if (uniqueIds.length === 0) {
         throw new Error(
-          "No valid variants were found in the VCF input. Make sure each row includes CHROM, POS, REF, and ALT."
+          "No valid variants were found in the VCF input. Make sure each row includes CHROM and POS."
         );
       }
 
       if (invalidRows > 0) {
         setInputError(
-          `Skipped ${invalidRows} invalid VCF row(s). Continue with ${ids.length} valid variant(s).`
+          `Skipped ${invalidRows} invalid VCF row(s). Continue with ${uniqueIds.length} valid position(s).`
         );
       }
 
-      data["ids"] = ids;
+      data["ids"] = uniqueIds;
 
       return {
         input_type: "ids",

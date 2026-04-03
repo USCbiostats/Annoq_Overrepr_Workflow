@@ -15,7 +15,7 @@ export type GeneInfo = {
 
 export type GeneMappingResponse = {
     gene_list: string[]; // List of all genes
-    rsId_genes_map: Record<string, string[]>; // Mapping of rsId to genes
+    rsId_genes_map: Record<string, string[]>; // Mapping of variant key (rsID or chr:pos) to genes
 }
 
 export type PantherGeneInfoResponse = {

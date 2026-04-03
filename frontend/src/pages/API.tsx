@@ -31,8 +31,9 @@ const API: React.FC = () => {
             SNPWay API Guide
           </Typography>
           <Typography variant="body1" color="text.secondary">
-            SNPWay uses a two-step backend workflow. First, it returns fast rsID to
-            gene mappings. Then, only when a download is requested, it fetches
+            SNPWay uses a two-step backend workflow. First, it returns fast
+            variant-key to gene mappings (rsID or chr:pos). Then, only when a
+            download is requested, it fetches
             PANTHER gene metadata in a separate call.
           </Typography>
 
@@ -75,10 +76,15 @@ const API: React.FC = () => {
 {`{
   "input_type": "ids",
   "idsQuery": {
-    "ids": ["1:115921355A>G", "1:12046063G>T"]
+    "ids": ["1:115921355", "1:12046063"]
   }
 }`}
             </Box>
+            <Typography variant="body2" color="text.secondary">
+              For VCF mode, SNPWay uses only CHROM and POS from each row and
+              expands to all ref/alt combinations internally when querying
+              AnnoQ.
+            </Typography>
 
             <Typography variant="subtitle2">Chromosome region input</Typography>
             <Box component="pre" sx={{ p: 2, bgcolor: "grey.100", borderRadius: 1, overflowX: "auto" }}>

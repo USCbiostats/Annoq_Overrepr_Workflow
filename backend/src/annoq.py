@@ -16,6 +16,8 @@ from src.query import (
     RsIdQuery,
 )
 
+DNA_BASES = ("A", "C", "G", "T")
+
 
 async def get_annoq_df(input_type: InputType, query: Any) -> pd.DataFrame:
     gql_query = create_gql_query(input_type, query)
@@ -70,6 +72,59 @@ def _row_to_chr_pos(row: pd.Series) -> str:
     if not chrom or not pos:
         return ""
     return f"{chrom}:{pos}"
+
+
+def _is_chr_pos_only_id(raw_id: str) -> bool:
+    text = raw_id.strip()
+    if not text or ":" not in text:
+        return False
+
+    _, rest = text.split(":", 1)
+    return rest.isdigit()
+
+
+def _chr_pos_to_annoq_variant_ids(chr_pos_id: str) -> list[str]:
+    text = chr_pos_id.strip()
+    if not _is_chr_pos_only_id(text):
+        return []
+
+    chrom, position = text.split(":", 1)
+    normalized_chr = _normalize_chr_label(chrom)
+    if not normalized_chr:
+        return []
+
+    # AnnoQ IDs use chromosome without the "chr" prefix.
+    annoq_chr = normalized_chr[3:]
+
+    return [
+        f"{annoq_chr}:{position}{ref}>{alt}"
+        for ref in DNA_BASES
+        for alt in DNA_BASES
+    ]
+
+
+def _expand_ids_for_annoq(raw_ids: list[str]) -> list[str]:
+    expanded: list[str] = []
+    seen: set[str] = set()
+
+    for raw_id in raw_ids:
+        text = str(raw_id).strip()
+        if not text:
+            continue
+
+        candidates = (
+            _chr_pos_to_annoq_variant_ids(text)
+            if _is_chr_pos_only_id(text)
+            else [text]
+        )
+
+        for candidate in candidates:
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            expanded.append(candidate)
+
+    return expanded
 
 
 def get_rsid_gene_mapping(
@@ -190,7 +245,7 @@ def create_rs_id_list_query(query: RsIdListQuery) -> Any:
 
 def create_ids_query(query: IdsQuery) -> Any:
     filter_fields = {
-        "ids": query.ids,
+        "ids": _expand_ids_for_annoq(query.ids),
     }
     return generate_gql_download_query("download_SNPs_by_IDs", filter_fields)
 

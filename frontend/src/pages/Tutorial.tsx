@@ -158,7 +158,7 @@ const Tutorial: React.FC = () => {
             The downloaded file contains four columns:
           </Typography>
           <Typography variant="body1" sx={{ mt: 1 }}>
-            1. Column 1: rsID
+            1. Column 1: rsID (rsID/chromosome input) or chr:pos (VCF input)
           </Typography>
           <Typography variant="body1" sx={{ mt: 1 }}>
             2. Column 2: PANTHER gene ID

@@ -29,7 +29,7 @@ import {
   PantherGeneInfoResponse,
 } from "../models";
 import { createResultsTableData } from "../components/utils";
-import { CorrectionType, Datasets } from "../constants";
+import { CorrectionType, Datasets, InputTypes } from "../constants";
 import { getPantherGeneInfo } from "../apis";
 
 interface ResultDisplayProps {
@@ -39,6 +39,7 @@ interface ResultDisplayProps {
   submitToPanther: () => void;
   annotationDataset: string;
   correctionType: CorrectionType;
+  inputTypeUsed: InputTypes | null;
 }
 
 // Define the structure of overrepresentation result items
@@ -72,6 +73,7 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
   correctionType,
   resetAnalysis,
   submitToPanther,
+  inputTypeUsed,
 }) => {
   // Add state to track whether to show all results
   const [showAllResults, setShowAllResults] = useState(false);
@@ -282,8 +284,14 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
 
     // Convert the data to CSV format
     const headers = Object.keys(tableData[0] || {});
+    const csvHeaders = [...headers];
+
+    if (inputTypeUsed === InputTypes.VCF && csvHeaders[0] === "rsId") {
+      csvHeaders[0] = "chr:pos";
+    }
+
     const csvRows = [
-      headers.join(","), // Header row
+      csvHeaders.join(","),
       ...tableData.map((row) =>
         headers
           .map((header) => {

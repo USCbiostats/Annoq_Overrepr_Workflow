@@ -12,8 +12,8 @@ At a high level, it does three things:
 
 The repository contains:
 
-- `backend/`: FastAPI service that queries AnnoQ and enriches mappings with PANTHER gene metadata.
-- `frontend/`: React + MUI app that captures user input, calls backend, calls PANTHER overrepresentation API directly, and renders results.
+- `backend/`: FastAPI service that queries AnnoQ, returns fast rsID-to-gene mappings, and exposes a separate endpoint for PANTHER gene metadata used in downloads.
+- `frontend/`: React + MUI app that captures user input, calls backend for mappings, calls PANTHER overrepresentation directly, and lazily fetches download metadata from backend.
 
 
 ## 2) System architecture
@@ -31,28 +31,26 @@ The repository contains:
 
 1. User selects input mode in frontend and submits analysis.
 2. Frontend builds a request payload and POSTs to backend `/gene_mappings`.
-3. Backend:
-   - Builds AnnoQ GraphQL download query based on input type.
-   - Fetches TSV data from AnnoQ download URL.
-   - Extracts rsID -> gene mappings from configured gene columns.
-   - Aggregates unique genes.
-   - Calls PANTHER geneinfo and builds gene/PANTHER mappings.
-4. Backend returns `GeneMappingsResponse`.
-5. Frontend calls PANTHER overrepresentation endpoint with `gene_list`.
-6. Frontend filters/sorts displays significant terms and provides CSV downloads.
+3. Backend builds the AnnoQ GraphQL download query based on input type and fetches TSV data.
+4. Backend extracts rsID -> gene mappings, aggregates unique genes, and enforces a 100,000 unique-gene cap.
+5. Backend returns a slim `GeneMappingsResponse` (gene list + rsID-to-gene map).
+6. Frontend validates gene count and calls PANTHER overrepresentation endpoint with `gene_list` when within limit.
+7. Frontend renders, filters, and sorts significant terms.
+8. When download is requested, frontend POSTs `gene_list` to backend `/panther_gene_info`.
+9. Backend fetches PANTHER geneinfo in sequential batches of 1000 genes, merges results, and returns download metadata.
 
 
 ## 3) Repository map and ownership
 
 ## Backend
 
-- `backend/main.py`: FastAPI app entrypoint, API route, static hosting.
+- `backend/main.py`: FastAPI app entrypoint, API routes (`/gene_mappings`, `/panther_gene_info`), static hosting.
 - `backend/src/query.py`: Query models and AnnoQ query builders.
 - `backend/src/annoq.py`: AnnoQ API interaction + rsID/gene extraction pipeline.
 - `backend/src/gene_cols.py`: Declares which AnnoQ columns are used for gene extraction.
 - `backend/src/gene_extractors.py`: Parsing logic for RefSeq/Ensembl/delimited gene fields.
 - `backend/src/panther.py`: PANTHER geneinfo integration + response normalization.
-- `backend/src/models.py`: Pydantic response schema.
+- `backend/src/models.py`: Pydantic request/response schemas for mapping and lazy PANTHER metadata.
 - `backend/scripts/build_frontend.sh`: Builds frontend and copies `dist/` into backend for static serving.
 
 ## Frontend
@@ -60,13 +58,14 @@ The repository contains:
 - `frontend/src/App.tsx`: Route definitions and theme wiring.
 - `frontend/src/pages/Home.tsx`: End-to-end UX orchestration.
 - `frontend/src/components/TestInputs.tsx`: Input collection/parsing and payload construction.
-- `frontend/src/apis.ts`: Backend + PANTHER API calls.
-- `frontend/src/components/ResultDisplay.tsx`: Overrepresentation table rendering, filtering, sorting, and downloads.
-- `frontend/src/components/utils.ts`: Converts backend payload into exportable table rows.
+- `frontend/src/apis.ts`: Backend + PANTHER API calls, shared JSON/error parsing, and gene-limit constant.
+- `frontend/src/components/ResultDisplay.tsx`: Overrepresentation table rendering, filtering, sorting, and lazy download preparation UX.
+- `frontend/src/components/utils.ts`: Converts merged mapping + PANTHER metadata payload into exportable table rows.
 - `frontend/src/models.ts`: Frontend response typings aligned with backend.
 - `frontend/src/constants.ts`: Input/test/correction enums and annotation dataset options.
 - `frontend/src/theme/theme.ts`: MUI theme configuration.
 - `frontend/src/components/BrandHeader.tsx`, `TopBar.tsx`, `Footer.tsx`: Shared layout.
+- `frontend/src/pages/API.tsx`: API documentation page aligned with current endpoint contracts.
 - `frontend/src/pages/About.tsx`, `Contact.tsx`, `NotFound.tsx`: informational pages.
 
 
@@ -81,7 +80,7 @@ The repository contains:
 - Defines `NoCacheStaticFiles` class to disable browser caching for served frontend assets.
 - Mounts `dist/` at root `/`, so backend can serve SPA assets after build copy.
 
-### Main endpoint: `POST /gene_mappings`
+### Endpoint 1: `POST /gene_mappings` (fast mapping)
 
 Inputs are modeled as:
 
@@ -94,14 +93,23 @@ Execution path:
 2. Calls `get_annoq_df(input_type, query)`.
 3. Calls `get_rsid_gene_mapping(df)`.
 4. Builds deduplicated `gene_list`.
-5. Calls `get_panther_info(gene_list)`.
-6. Returns `GeneMappingsResponse` with:
-   - `gene_list`
-   - `rsId_genes_map`
-   - `panther_gene_info`
-   - `gene_panther_mapping`
+5. Validates gene count (`<= 100000`).
+6. Returns `GeneMappingsResponse` containing `gene_list` and `rsId_genes_map`.
 
-Error handling wraps all exceptions into HTTP 500 with `detail=str(e)`.
+### Endpoint 2: `POST /panther_gene_info` (lazy metadata for downloads)
+
+Inputs are modeled as:
+
+- `gene_list: list[str]`
+
+Execution path:
+
+1. Deduplicates and trims `gene_list`.
+2. Validates gene count (`<= 100000`).
+3. Calls `get_panther_info(gene_list)`.
+4. Returns `PantherGeneInfoResponse` containing `panther_gene_info` and `gene_panther_mapping`.
+
+Error handling now preserves explicit `HTTPException`s (e.g., 422 limit checks) and wraps unexpected failures as HTTP 500 with `detail=str(e)`.
 
 
 ## 4.2 Query models and supported input types (`backend/src/query.py`)
@@ -195,11 +203,13 @@ This file is effectively the central place that defines which AnnoQ columns cont
 
 `get_panther_info(gene_list)`:
 
-- POSTs to `https://pantherdb.org/services/oai/pantherdb/geneinfo`.
-- Uses `geneInputList=<comma genes>`, `organism=9606`.
-- Parses `mapped_genes` entries into:
+- Splits inputs into sequential batches of 1000 genes (`PANTHER_GENEINFO_BATCH_SIZE = 1000`).
+- POSTs each batch to `https://pantherdb.org/services/oai/pantherdb/geneinfo` with `geneInputList=<comma genes>`, `organism=9606`.
+- Merges every batch response into:
   - `panther_gene_info: dict[PANTHER_ID, GeneInfo]`
   - `gene_panther_mapping: dict[gene_symbol, list[PANTHER_ID]]`
+
+This batching was introduced to support the upstream PANTHER geneinfo API limit of 1000 IDs per request while preserving existing output structure.
 
 `GeneInfo` is populated with family/subfamily and multiple annotation classes:
 
@@ -218,6 +228,13 @@ Helper extraction handles both object and list forms from API response.
 
 - `gene_list: list[str]`
 - `rsId_genes_map: dict[str, list[str]]`
+
+`PantherGeneInfoRequest` fields:
+
+- `gene_list: list[str]`
+
+`PantherGeneInfoResponse` fields:
+
 - `panther_gene_info: dict[str, GeneInfo]`
 - `gene_panther_mapping: dict[str, list[str]]`
 
@@ -251,8 +268,9 @@ Core method: `onRunTest(payload, dataset, testType, correction)`
 
 1. Calls backend `getGeneMappings(payload)`.
 2. Validates response and non-empty gene list.
-3. Calls `getOverrepresentation(gene_list.join(","), ...)`.
-4. Stores results and advances to stage 2.
+3. Enforces frontend cap check (`gene_list.length <= 100000`) before overrepresentation.
+4. Calls `getOverrepresentation(gene_list.join(","), ...)`.
+5. Stores results and advances to stage 2.
 
 Also includes `submitToPanther()` that builds an HTML form and opens full PANTHER results in a new tab.
 
@@ -297,6 +315,17 @@ Advanced options are optional and configure:
   - POST to `${VITE_BACKEND_BASE_URL}/gene_mappings`.
   - Uses JSON body.
 
+- `getPantherGeneInfo(geneList)`:
+  - POST to `${VITE_BACKEND_BASE_URL}/panther_gene_info`.
+  - Used only when download data is being prepared.
+
+- `parseJsonResponse<T>(response)`:
+  - Shared parser for JSON success/error handling across API calls.
+  - Surfaces backend `detail` messages when available.
+
+- `MAX_OVERREP_GENE_COUNT = 100000`:
+  - Shared frontend constant used to guard overrepresentation submissions.
+
 - `getOverrepresentation(...)`:
   - POST directly to PANTHER enrich endpoint.
   - Uses `application/x-www-form-urlencoded`.
@@ -317,17 +346,20 @@ Responsibilities:
   - all mappings
   - significant-only mappings
   - per-term mappings by clicking row count in upload column.
+- Lazily prepare download metadata from backend only when a download is triggered.
 
 UI implementation details:
 
 - Uses `react-virtuoso` for virtualized table rendering.
 - Supports dynamic columns (adds FDR column when correction type is FDR).
-- Uses `createResultsTableData` helper to map response into export rows.
+- Shows a "Preparing your download..." state while backend fetches PANTHER metadata.
+- Caches prepared PANTHER metadata for subsequent download actions.
+- Uses `createResultsTableData` helper to map merged payloads into export rows.
 
 
 ## 5.6 Export mapping helper (`frontend/src/components/utils.ts`)
 
-`createResultsTableData(geneMappingResponse, pantherIdsToInclude?, annotationDataset?)`
+`createResultsTableData(geneMappingDownloadData, pantherIdsToInclude?, annotationDataset?)`
 
 Algorithm:
 
@@ -335,7 +367,7 @@ Algorithm:
 2. Find PANTHER IDs per gene via `gene_panther_mapping`.
 3. Build unique `(rsID, PANTHER_ID)` pairs.
 4. Compute `mappedGenes` intersection for each pair.
-5. Join with `panther_gene_info` and return flattened rows.
+5. Join with lazy-loaded `panther_gene_info` and return flattened rows.
 6. Optionally filter to relevant columns based on selected dataset.
 
 This module is the key bridge from nested backend graph data into analyst-friendly flat table format.
@@ -362,14 +394,31 @@ This module is the key bridge from nested backend graph data into analyst-friend
 }
 ```
 
-## 6.2 Backend response shape
+## 6.2 Backend response shape (`POST /gene_mappings`)
 
 ```json
 {
   "gene_list": ["FGFR2", "..."],
   "rsId_genes_map": {
     "rs1219648": ["FGFR2", "..."]
-  },
+  }
+}
+```
+
+## 6.3 Lazy download metadata endpoint (`POST /panther_gene_info`)
+
+Request:
+
+```json
+{
+  "gene_list": ["FGFR2", "BRCA1", "TP53"]
+}
+```
+
+Response:
+
+```json
+{
   "panther_gene_info": {
     "PTHR12345:SF1": {
       "PANTHER_ID": "PTHR12345:SF1",
@@ -389,6 +438,14 @@ This module is the key bridge from nested backend graph data into analyst-friend
   "gene_panther_mapping": {
     "FGFR2": ["PTHR12345:SF1"]
   }
+}
+```
+
+## 6.4 Limit validation error example
+
+```json
+{
+  "detail": "Input exceeds PANTHER limit of 100,000 unique genes. Found 123456 unique genes."
 }
 ```
 
@@ -429,22 +486,23 @@ Integrated static serving via backend:
 6. Some frontend types are `any` (e.g., overrepresentation payload), reducing compile-time safety.
 7. In `TestInputs`, file-reader helper sets `rsIds` even while reading VCF input (likely harmless but confusing state coupling).
 8. In `ResultDisplay`, correction label logic displays Bonferroni vs FDR text; `NONE` falls into non-Bonferroni branch and uses raw p-value filter path.
-9. Static build copy script duplicates `dist` into backend without cleanup/versioning strategy.
+9. Lazy download preparation can be slow on large gene lists because PANTHER metadata is fetched on-demand.
+10. Static build copy script duplicates `dist` into backend without cleanup/versioning strategy.
 
 
 ## 9) What to know before modifying the system
 
-1. The most important backend extension points are `backend/src/query.py` and `backend/src/annoq.py`.
-2. The highest-impact frontend orchestration lives in `frontend/src/pages/Home.tsx` and `frontend/src/components/TestInputs.tsx`.
+1. The main backend extension points are `backend/src/query.py`, `backend/src/annoq.py`, and endpoint orchestration in `backend/main.py`.
+2. `/gene_mappings` is intentionally lightweight; download-related metadata lives behind `/panther_gene_info`.
 3. CSV output schema changes should be made in one place: `frontend/src/components/utils.ts`.
 4. If annotation columns in AnnoQ evolve, update `backend/src/gene_cols.py` and ensure extractors still parse correctly.
-5. Any API shape change in backend must be mirrored in `frontend/src/models.ts`.
+5. Any backend API shape change must be mirrored in `frontend/src/models.ts` and `frontend/src/apis.ts`.
 
 
 ## 10) Recommended onboarding path for new engineers
 
-1. Run backend only and inspect `/gene_mappings` with a small rsID list payload.
-2. Run frontend in dev mode and follow one full analysis from input to result table.
+1. Run backend only and inspect `/gene_mappings` and `/panther_gene_info` with small payloads.
+2. Run frontend in dev mode and follow one full analysis from input to result table and CSV download.
 3. Read these files in order:
    - `backend/main.py`
    - `backend/src/annoq.py`
@@ -453,9 +511,10 @@ Integrated static serving via backend:
    - `frontend/src/components/TestInputs.tsx`
    - `frontend/src/components/ResultDisplay.tsx`
    - `frontend/src/components/utils.ts`
+   - `frontend/src/apis.ts`
 4. Add one small feature end-to-end (for example, a new dataset option or extra CSV column) to validate your understanding.
 
 
 ## 11) Summary
 
-This codebase is a practical integration layer between variant annotations (AnnoQ) and functional enrichment (PANTHER), with the backend focused on mapping and normalization while the frontend focuses on workflow UX, result interpretation, and data export. Engineers can start productively by understanding the request pipeline and the mapping table generation path, then iterating on specific input modes, annotation sources, and result/reporting behavior.
+This codebase is a practical integration layer between variant annotations (AnnoQ) and functional enrichment (PANTHER), now optimized for responsiveness by separating fast mapping from slower download metadata enrichment. The backend focuses on mapping normalization and bounded metadata retrieval, while the frontend orchestrates enrichment, limit-aware UX, and on-demand export preparation.

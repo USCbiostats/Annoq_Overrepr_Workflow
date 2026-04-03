@@ -47,7 +47,7 @@ class GeneMappingsResponse(BaseModel):
     )
 
     rsId_genes_map: dict[str, list[str]] = Field(
-        ..., description="Mapping of rsId to genes"
+        ..., description="Mapping of variant key (rsID or chr:pos) to genes"
     )
 
 

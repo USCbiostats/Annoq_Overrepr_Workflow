@@ -16,7 +16,7 @@ import {
   Stack,
   Button,
 } from "@mui/material";
-import { CorrectionType, TestType } from "../constants";
+import { CorrectionType, InputTypes, TestType } from "../constants";
 import {
   getGeneMappings,
   getOverrepresentation,
@@ -40,6 +40,8 @@ function Home() {
     correction: "" as CorrectionType,
     testType: "" as TestType,
   });
+  const [resultInputType, setResultInputType] =
+    useState<InputTypes | null>(null);
 
   const onRunTest = async (
     payload: any,
@@ -90,6 +92,17 @@ function Home() {
         correction,
         testType,
       });
+
+      const nextResultInputType: InputTypes | null =
+        payload?.input_type === "ids"
+          ? InputTypes.VCF
+          : payload?.input_type === InputTypes.CHROMOSOME
+          ? InputTypes.CHROMOSOME
+          : payload?.input_type === InputTypes.RSIDS
+          ? InputTypes.RSIDS
+          : null;
+
+      setResultInputType(nextResultInputType);
 
       setCurrentStage(2);
       setSuccess(true);
@@ -168,6 +181,7 @@ function Home() {
     setResponse(null);
     setOverrepresentationResult(null);
     setError(null);
+    setResultInputType(null);
   };
 
   return (
@@ -300,6 +314,7 @@ function Home() {
             submitToPanther={submitToPanther}
             annotationDataset={pantherId.dataset}
             correctionType={pantherId.correction}
+            inputTypeUsed={resultInputType}
           />
         )}
 
