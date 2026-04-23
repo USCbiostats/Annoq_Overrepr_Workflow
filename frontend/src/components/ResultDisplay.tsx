@@ -44,6 +44,7 @@ interface ResultDisplayProps {
 
 // Define the structure of overrepresentation result items
 interface OverrepResultItem {
+  termId: string;
   process: string;
   refCount: number;
   uploadCount: number;
@@ -52,7 +53,7 @@ interface OverrepResultItem {
   overUnder: string;
   pValue: number;
   fdr: number;
-  mapped_panther_ids: string[];
+  mapped_ids: string[];
 }
 
 // Define column data structure
@@ -65,6 +66,38 @@ interface ColumnData {
 
 // Add type for sort direction
 type SortDirection = "asc" | "desc";
+
+const buildPantherIdFilterFromGenes = (
+  genePantherMapping: Record<string, string[]>,
+  genesToInclude?: string[]
+): string[] | undefined => {
+  if (!genesToInclude) {
+    return undefined;
+  }
+
+  const normalizedGenes = new Set(
+    genesToInclude
+      .map((gene) => gene.trim())
+      .filter((gene) => gene.length > 0)
+  );
+
+  if (normalizedGenes.size === 0) {
+    return [];
+  }
+
+  const pantherIds = new Set<string>();
+  for (const gene of normalizedGenes) {
+    const ids = genePantherMapping[gene] || [];
+    for (const id of ids) {
+      const normalizedId = String(id).trim();
+      if (normalizedId) {
+        pantherIds.add(normalizedId);
+      }
+    }
+  }
+
+  return Array.from(pantherIds);
+};
 
 const ResultDisplay: React.FC<ResultDisplayProps> = ({
   response,
@@ -147,6 +180,7 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
         }
 
         return {
+          termId: item.term?.id || "",
           process: processName,
           refCount: item.number_in_reference || 0,
           uploadCount: item.number_in_list || 0,
@@ -160,8 +194,11 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
           pValue:
             typeof item.pValue === "number" ? +item.pValue.toExponential(2) : 0,
           fdr: typeof item.fdr === "number" ? +item.fdr.toExponential(2) : 0,
-          mapped_panther_ids:
-            item.input_list?.mapped_panther_ids?.split(",") || [],
+          mapped_ids:
+            item.input_list?.mapped_ids
+              ?.split(",")
+              .map((gene: string) => gene.trim())
+              .filter((gene: string) => gene.length > 0) || [],
         };
       });
 
@@ -254,8 +291,8 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
   };
 
   const handleDownloadCSV = async (
-    pantherIdsToInclude?: string[],
-    fileTitle?: string
+    fileTitle?: string,
+    genesToInclude?: string[]
   ) => {
     if (isPreparingDownload) {
       return;
@@ -267,6 +304,18 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
     }
 
     setDownloadMessage(null);
+
+    const pantherIdsToInclude = buildPantherIdFilterFromGenes(
+      downloadData.gene_panther_mapping,
+      genesToInclude
+    );
+
+    if (genesToInclude && (!pantherIdsToInclude || pantherIdsToInclude.length === 0)) {
+      setDownloadMessage(
+        "No rows matched this download selection. Try downloading all mappings or changing filters."
+      );
+      return;
+    }
 
     // Generate table data using the utility function - pass in the annotation dataset and download preference
     const tableData = createResultsTableData(
@@ -341,12 +390,24 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
   };
 
   const handleDownloadSignificant = () => {
-    // Always use filteredData (significant results) regardless of current view
-    const significantIds = filteredData
-      .flatMap((item) => item.mapped_panther_ids)
-      .filter((id, index, self) => self.indexOf(id) === index);
+    const significantRowsByTermId = new Map<string, OverrepResultItem>();
+    for (const row of filteredData) {
+      const key = row.termId || row.process;
+      if (!significantRowsByTermId.has(key)) {
+        significantRowsByTermId.set(key, row);
+      }
+    }
 
-    if (significantIds.length === 0) {
+    const significantGenes = Array.from(
+      new Set(
+        Array.from(significantRowsByTermId.values())
+          .flatMap((row) => row.mapped_ids)
+          .map((gene) => gene.trim())
+          .filter((gene) => gene.length > 0)
+      )
+    );
+
+    if (significantGenes.length === 0) {
       setDownloadMessage(
         "No significant categories are available for download with the current settings."
       );
@@ -354,7 +415,7 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
       return;
     }
 
-    void handleDownloadCSV(significantIds, `significant_gene_mappings.csv`);
+    void handleDownloadCSV("significant_gene_mappings.csv", significantGenes);
     handleCloseDownloadMenu();
   };
 
@@ -522,13 +583,10 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
                 key={column.dataKey}
                 align="center"
                 onClick={() => {
-                  if (
-                    row.mapped_panther_ids &&
-                    row.mapped_panther_ids.length > 0
-                  ) {
+                  if (row.mapped_ids && row.mapped_ids.length > 0) {
                     void handleDownloadCSV(
-                      row.mapped_panther_ids,
-                      `${row.process}_gene_mappings.csv`
+                      `${row.process}_gene_mappings.csv`,
+                      row.mapped_ids
                     );
                   }
                 }}
