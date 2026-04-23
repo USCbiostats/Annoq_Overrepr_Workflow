@@ -17,9 +17,49 @@ from src.query import (
 )
 
 DNA_BASES = ("A", "C", "G", "T")
+ANNOQ_IDS_BATCH_SIZE = 50000
+
+
+def _chunk_items(items: list[str], chunk_size: int) -> list[list[str]]:
+    if chunk_size <= 0:
+        raise ValueError("chunk_size must be greater than 0")
+    return [items[i : i + chunk_size] for i in range(0, len(items), chunk_size)]
+
+
+async def _get_annoq_df_for_ids_query(query: IdsQuery) -> pd.DataFrame:
+    expanded_ids = _expand_ids_for_annoq(query.ids)
+    if not expanded_ids:
+        return pd.DataFrame()
+
+    id_batches = _chunk_items(expanded_ids, ANNOQ_IDS_BATCH_SIZE)
+    batch_dfs: list[pd.DataFrame] = []
+
+    for batch_index, batch_ids in enumerate(id_batches, start=1):
+        gql_query = generate_gql_download_query(
+            "download_SNPs_by_IDs",
+            {"ids": batch_ids},
+        )
+        try:
+            download_url = await get_download_url(gql_query)
+            batch_df = await download_data(download_url)
+            batch_dfs.append(batch_df)
+        except Exception as exc:
+            raise Exception(
+                "Failed to retrieve AnnoQ data for ids batch "
+                f"{batch_index}/{len(id_batches)} (size={len(batch_ids)}): {exc}"
+            ) from exc
+
+    merged_df = pd.concat(batch_dfs, ignore_index=True)
+    merged_df.replace(".", "", inplace=True)
+    return merged_df
 
 
 async def get_annoq_df(input_type: InputType, query: Any) -> pd.DataFrame:
+    if input_type == InputType.ids:
+        if not isinstance(query, IdsQuery):
+            raise ValueError("Ids query payload is missing or invalid")
+        return await _get_annoq_df_for_ids_query(query)
+
     gql_query = create_gql_query(input_type, query)
     download_url = await get_download_url(gql_query)
     df = await download_data(download_url)

@@ -2,7 +2,7 @@
 
 ## 1) What this repository is
 
-SNPWay is a full-stack application that converts variant-oriented input (VCF-derived IDs, rsIDs, or chromosome ranges) into gene-level annotations and then runs overrepresentation testing using PANTHER.
+SNPWay is a full-stack application that converts variant-oriented input (VCF-derived CHROM/POS positions, rsIDs, or chromosome ranges) into gene-level annotations and then runs overrepresentation testing using PANTHER.
 
 At a high level, it does three things:
 
@@ -12,8 +12,8 @@ At a high level, it does three things:
 
 The repository contains:
 
-- `backend/`: FastAPI service that queries AnnoQ, returns fast rsID-to-gene mappings, and exposes a separate endpoint for PANTHER gene metadata used in downloads.
-- `frontend/`: React + MUI app that captures user input, calls backend for mappings, calls PANTHER overrepresentation directly, and lazily fetches download metadata from backend.
+- `backend/`: FastAPI service that queries AnnoQ, returns fast variant-key-to-gene mappings (rsID or chr:pos depending on mode), and exposes a separate endpoint for PANTHER gene metadata used in downloads.
+- `frontend/`: React + MUI app that captures user input (including CHROM/POS-only VCF handling), calls backend for mappings, calls PANTHER overrepresentation directly, and lazily fetches download metadata from backend.
 
 
 ## 2) System architecture
@@ -32,8 +32,8 @@ The repository contains:
 1. User selects input mode in frontend and submits analysis.
 2. Frontend builds a request payload and POSTs to backend `/gene_mappings`.
 3. Backend builds the AnnoQ GraphQL download query based on input type and fetches TSV data.
-4. Backend extracts rsID -> gene mappings, aggregates unique genes, and enforces a 100,000 unique-gene cap.
-5. Backend returns a slim `GeneMappingsResponse` (gene list + rsID-to-gene map).
+4. Backend extracts variant-key -> gene mappings (rsID keys for rsID-style inputs, chr:pos keys for ids/VCF inputs), aggregates unique genes, and enforces a 100,000 unique-gene cap.
+5. Backend returns a slim `GeneMappingsResponse` (gene list + `rsId_genes_map`).
 6. Frontend validates gene count and calls PANTHER overrepresentation endpoint with `gene_list` when within limit.
 7. Frontend renders, filters, and sorts significant terms.
 8. When download is requested, frontend POSTs `gene_list` to backend `/panther_gene_info`.
@@ -96,6 +96,11 @@ Execution path:
 5. Validates gene count (`<= 100000`).
 6. Returns `GeneMappingsResponse` containing `gene_list` and `rsId_genes_map`.
 
+Notes:
+
+- For `input_type=ids`, backend forces mapping keys to normalized `chr:pos`.
+- For rsID-based inputs, mapping keys remain rsIDs.
+
 ### Endpoint 2: `POST /panther_gene_info` (lazy metadata for downloads)
 
 Inputs are modeled as:
@@ -128,7 +133,7 @@ Pydantic query models:
 - `ChromosomeQuery`: `chr`, `start`, `end`
 - `RsIdQuery`: single `rsId`
 - `RsIdListQuery`: list `rsIdList`
-- `IdsQuery`: list `ids` (used for parsed VCF variant IDs)
+- `IdsQuery`: list `ids` (used for parsed VCF positions; preferred format `chr:pos`)
 - `GeneQuery`: `gene`
 - `KeywordQuery`: `keyword`
 
@@ -144,7 +149,7 @@ Implemented builders:
 - `create_chromosome_query`
 - `create_rs_id_query`
 - `create_rs_id_list_query`
-- `create_ids_query`
+- `create_ids_query` (expands `chr:pos` inputs to all ref/alt combinations for AnnoQ)
 
 Not implemented (currently `pass`):
 
@@ -156,6 +161,12 @@ Not implemented (currently `pass`):
 - Adds selected output fields from `GENE_COLS + rs_dbSNP151`.
 - Calls AnnoQ `download_*` function and requests downloadable TSV path.
 
+`create_ids_query` behavior for VCF-origin IDs:
+
+- Accepts `chr:pos` IDs from frontend.
+- Expands each position to 16 possible `ref/alt` combinations (`A/C/G/T x A/C/G/T`, including `ref==alt`) before calling `download_SNPs_by_IDs`.
+- Preserves backward compatibility for already-expanded IDs such as `1:100A>G`.
+
 ### Download and parse
 
 - `get_download_url` POSTs to `https://api-v2.annoq.org/graphql`.
@@ -163,18 +174,20 @@ Not implemented (currently `pass`):
 - `download_data` GETs TSV and loads into pandas DataFrame.
 - Replaces `"."` placeholders with empty string globally in DataFrame.
 
-### rsID -> genes extraction
+### Variant-key -> genes extraction
 
 `get_rsid_gene_mapping(annoq_df)`:
 
 1. Iterates rows.
-2. Uses `rs_dbSNP151` as rsID key.
+2. Picks mapping key by mode:
+  - `rs_dbSNP151` for non-`ids` input modes.
+  - normalized `chr:pos` for `ids` mode.
 3. For each configured column in `GENE_COLS`, applies its extractor.
-4. Strips empties and deduplicates genes per rsID.
+4. Strips empties and deduplicates genes per key.
 
 Output:
 
-- `dict[str, list[str]]` mapping rsID to associated genes.
+- `dict[str, list[str]]` mapping variant key (`rsID` or `chr:pos`) to associated genes.
 
 
 ## 4.4 Gene column config (`backend/src/gene_cols.py`)
@@ -290,8 +303,11 @@ Supported UI input modes:
   - `chrQuery: { chr, start, end }`
 
 - VCF mode:
-  - Parses each non-header VCF line, splits columns, creates ID string:
-    - `${chrom_without_chr}:${pos}${ref}>${alt}`
+  - Parses each non-header VCF line and uses only `CHROM` + `POS`.
+  - Ignores `REF`, `ALT`, and all other VCF columns for ID generation.
+  - Creates position ID string:
+    - `${chrom_without_chr}:${pos}`
+  - De-duplicates repeated positions before submission.
   - Sends:
     - `input_type: "ids"`
     - `idsQuery: { ids: [...] }`
@@ -346,6 +362,9 @@ Responsibilities:
   - all mappings
   - significant-only mappings
   - per-term mappings by clicking row count in upload column.
+- Apply input-aware CSV first-column label:
+  - `rsId` for rsID/chromosome-origin analyses.
+  - `chr:pos` for VCF-origin analyses.
 - Lazily prepare download metadata from backend only when a download is triggered.
 
 UI implementation details:
@@ -363,7 +382,7 @@ UI implementation details:
 
 Algorithm:
 
-1. Iterate each rsID and its genes.
+1. Iterate each variant key (`rsID` or `chr:pos`) and its genes.
 2. Find PANTHER IDs per gene via `gene_panther_mapping`.
 3. Build unique `(rsID, PANTHER_ID)` pairs.
 4. Compute `mappedGenes` intersection for each pair.
@@ -371,6 +390,8 @@ Algorithm:
 6. Optionally filter to relevant columns based on selected dataset.
 
 This module is the key bridge from nested backend graph data into analyst-friendly flat table format.
+
+Note: for VCF-origin analyses, the internal key field remains `rsId` in table objects, while CSV export rewrites only the header label to `chr:pos`.
 
 
 ## 5.7 Theme and styling
@@ -400,10 +421,16 @@ This module is the key bridge from nested backend graph data into analyst-friend
 {
   "gene_list": ["FGFR2", "..."],
   "rsId_genes_map": {
-    "rs1219648": ["FGFR2", "..."]
+    "rs1219648": ["FGFR2", "..."],
+    "chr1:115921355": ["GENE_X", "..."]
   }
 }
 ```
+
+`rsId_genes_map` key semantics:
+
+- rsID/chromosome inputs -> rsID keys.
+- `ids` (VCF-origin) inputs -> `chr:pos` keys.
 
 ## 6.3 Lazy download metadata endpoint (`POST /panther_gene_info`)
 
@@ -484,7 +511,7 @@ Integrated static serving via backend:
 4. CORS is globally open (`*`).
 5. Frontend overrepresentation call bypasses backend and depends on browser-to-PANTHER connectivity/CORS.
 6. Some frontend types are `any` (e.g., overrepresentation payload), reducing compile-time safety.
-7. In `TestInputs`, file-reader helper sets `rsIds` even while reading VCF input (likely harmless but confusing state coupling).
+7. VCF mode intentionally ignores `REF/ALT`; backend compensates by expanding each `chr:pos` to 16 candidate variants, which can increase `idsQuery` size.
 8. In `ResultDisplay`, correction label logic displays Bonferroni vs FDR text; `NONE` falls into non-Bonferroni branch and uses raw p-value filter path.
 9. Lazy download preparation can be slow on large gene lists because PANTHER metadata is fetched on-demand.
 10. Static build copy script duplicates `dist` into backend without cleanup/versioning strategy.
@@ -517,4 +544,4 @@ Integrated static serving via backend:
 
 ## 11) Summary
 
-This codebase is a practical integration layer between variant annotations (AnnoQ) and functional enrichment (PANTHER), now optimized for responsiveness by separating fast mapping from slower download metadata enrichment. The backend focuses on mapping normalization and bounded metadata retrieval, while the frontend orchestrates enrichment, limit-aware UX, and on-demand export preparation.
+This codebase is a practical integration layer between variant annotations (AnnoQ) and functional enrichment (PANTHER), optimized for responsiveness by separating fast mapping from slower download metadata enrichment. VCF handling is now CHROM/POS-first on the frontend, with backend expansion to all ref/alt combinations for AnnoQ compatibility. The backend focuses on mapping normalization and bounded metadata retrieval, while the frontend orchestrates enrichment, limit-aware UX, and on-demand export preparation.
