@@ -24,16 +24,14 @@ const API: React.FC = () => {
             AnnoQ Libraries
           </Typography>
           <Typography variant="body1" color="text.secondary">
-            SNPWay now serves as the shared workflow UI for the Python package
-            annoq-py and the R package AnnoQR. Both libraries call the same backend
-            workflow, which returns a compact payload containing the SNP-to-gene
-            mappings, PANTHER metadata, and normalized overrepresentation rows.
+            SNPWay workflow can be called directly from the python package <a href="https://github.com/USCbiostats/annoq-py" target="_blank" rel="noopener noreferrer">annoq-py</a> and the R package <a href="https://github.com/USCbiostats/AnnoQR" target="_blank" rel="noopener noreferrer">AnnoQR</a>. Both libraries call the same backend
+            workflow as the UI.
           </Typography>
 
           <Divider sx={{ my: 3 }} />
 
           <Stack spacing={2}>
-            <Typography variant="h6">Python</Typography>
+            <Typography variant="h6"><a href="https://github.com/USCbiostats/annoq-py" target="_blank" rel="noopener noreferrer">Python</a></Typography>
             <Box
               component="pre"
               sx={{ p: 2, bgcolor: "grey.100", borderRadius: 1, overflowX: "auto" }}
@@ -51,12 +49,12 @@ workflow = annoq.run_snpway_overrepresentation_workflow(
     enrichment_test_type="FISHER",
 )
 
-print(mapping["gene_list"])
-print(len(workflow["overrepresentation_results"]))
-print(len(workflow["overrepresentation_significant_results"]))`}
+print(mapping["mapping"]["gene_list"])
+print(len(workflow["overrepresentation"]["results"]))
+print(len(workflow["overrepresentation"]["significant_results"]))`}
             </Box>
 
-            <Typography variant="h6">R</Typography>
+            <Typography variant="h6"><a href="https://github.com/USCbiostats/AnnoQR" target="_blank" rel="noopener noreferrer">R</a></Typography>
             <Box
               component="pre"
               sx={{ p: 2, bgcolor: "grey.100", borderRadius: 1, overflowX: "auto" }}
@@ -75,8 +73,8 @@ workflow <- snpwayOverrepresentationWorkflowQuery(
 )
 
 names(mapping)
-length(workflow$overrepresentation_results)
-length(workflow$overrepresentation_significant_results)`}
+length(workflow$overrepresentation$results)
+length(workflow$overrepresentation$significant_results)`}
             </Box>
 
             <Typography variant="body2" color="text.secondary">
@@ -91,9 +89,58 @@ length(workflow$overrepresentation_significant_results)`}
           <Stack spacing={2}>
             <Typography variant="h6">Shared workflow payload</Typography>
             <Typography variant="body2" color="text.secondary">
-              The workflow response contains only the compact data needed by the
-              clients: gene_list, rsId_genes_map, panther_gene_info,
-              gene_panther_mapping, and overrepresentation_results.
+              The library responses are nested to group related data and reduce
+              confusion. Each section has a specific purpose:
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ml: 2}}>
+              <strong>mapping:</strong> SNP-to-gene associations (gene_list: unique genes found; variant_gene_map: rsID/chr:pos to genes)
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ml: 2}}>
+              <strong>panther:</strong> Gene annotations (gene_info: families, pathways, GO terms; gene_to_panther_map: gene to ID cross-reference)
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ml: 2}}>
+              <strong>overrepresentation:</strong> Enrichment analysis (results: all terms; significant_results: filtered; settings: parameters; significance_cutoff: threshold)
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ml: 2}}>
+              <strong>csv:</strong> Export tables (all_mappings/significant_mappings with filtered/all columns)
+            </Typography>
+            <Box
+              component="pre"
+              sx={{ p: 2, bgcolor: "grey.100", borderRadius: 1, overflowX: "auto" }}
+            >
+{`{
+  "mapping": {
+    "gene_list": ["FGFR2", "..."],
+    "variant_gene_map": {"rs1219648": ["FGFR2"], "1:115921355": ["GENE_X"]}
+  },
+  "panther": {
+    "gene_info": {"PTHR12345:SF1": {"PANTHER_ID": "PTHR12345:SF1", "PANTHER_family": "..."}},
+    "gene_to_panther_map": {"FGFR2": ["PTHR12345:SF1"]}
+  },
+  "overrepresentation": {
+    "results": [...],
+    "significant_results": [...],
+    "settings": {"annot_data_set": "GO:0008150", "correction": "FDR", "enrichment_test_type": "FISHER"},
+    "significance_cutoff": {"field": "fdr", "p_value": 0.05}
+  },
+  "csv": {
+    "all_mappings": [...],
+    "all_mappings_all_columns": [...],
+    "significant_mappings": [...],
+    "significant_mappings_all_columns": [...]
+  }
+}`}
+            </Box>
+            <Typography variant="body2" color="text.secondary">
+              Use the mapping section for the SNP to gene associations, panther
+              for metadata, overrepresentation for term results and filters, and
+              csv for export-ready rows. The same structure is returned by both
+              annoq-py and AnnoQR.
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              The mapping workflow returns only mapping + panther. The
+              overrepresentation workflow returns mapping + panther +
+              overrepresentation + csv.
             </Typography>
           </Stack>
         </Box>
