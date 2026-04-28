@@ -18,21 +18,19 @@ import {
 } from "@mui/material";
 import { CorrectionType, InputTypes, TestType } from "../constants";
 import {
-  getGeneMappings,
-  getOverrepresentation,
+  runWorkflowOverrepresentation,
   MAX_OVERREP_GENE_COUNT,
 } from "../apis";
 import Footer from "../components/Footer";
-import { GeneMappingResponse } from "../models";
+import { WorkflowOverrepresentationResponse } from "../models";
 import ResultDisplay from "../components/ResultDisplay";
 
 function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null as string | null);
   const [success, setSuccess] = useState(false);
-  const [response, setResponse] = useState(null as GeneMappingResponse | null);
-  const [overrepresentationResult, setOverrepresentationResult] = useState(
-    null as any
+  const [workflowResponse, setWorkflowResponse] = useState(
+    null as WorkflowOverrepresentationResponse | null
   );
   const [currentStage, setCurrentStage] = useState(1);
   const [pantherId, setPantherId] = useState({
@@ -54,8 +52,13 @@ function Home() {
     setSuccess(false);
 
     try {
-      const response = await getGeneMappings(payload);
-      setResponse(response);
+      const response = await runWorkflowOverrepresentation(
+        payload,
+        dataset,
+        correction,
+        testType
+      );
+      setWorkflowResponse(response);
 
       if (!response) {
         setError("No data returned from the server. Please try again.");
@@ -74,18 +77,6 @@ function Home() {
         );
         return;
       }
-
-      const overrepresentationResponse = await getOverrepresentation(
-        response.gene_list.join(","),
-        dataset,
-        correction,
-        testType
-      );
-      if (!overrepresentationResponse) {
-        setError("No data returned from the server. Please try again.");
-        return;
-      }
-      setOverrepresentationResult(overrepresentationResponse);
 
       setPantherId({
         dataset,
@@ -114,7 +105,7 @@ function Home() {
   };
 
   const submitToPanther = () => {
-    if (!response?.gene_list.length) {
+    if (!workflowResponse?.gene_list.length) {
       setError("No gene list available. Please run the analysis again.");
       return;
     }
@@ -157,7 +148,7 @@ function Home() {
     const inputField = document.createElement("input");
     inputField.type = "hidden";
     inputField.name = "geneInputList";
-    inputField.value = response.gene_list.join(",");
+    inputField.value = workflowResponse.gene_list.join(",");
 
     form.appendChild(correctionField);
     form.appendChild(datasetField);
@@ -178,8 +169,7 @@ function Home() {
 
   const resetAnalysis = () => {
     setCurrentStage(1);
-    setResponse(null);
-    setOverrepresentationResult(null);
+    setWorkflowResponse(null);
     setError(null);
     setResultInputType(null);
   };
@@ -308,8 +298,7 @@ function Home() {
           </Box>
         ) : (
           <ResultDisplay
-            response={response}
-            overrepresentationResult={overrepresentationResult}
+            workflowResponse={workflowResponse}
             resetAnalysis={resetAnalysis}
             submitToPanther={submitToPanther}
             annotationDataset={pantherId.dataset}

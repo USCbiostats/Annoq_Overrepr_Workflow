@@ -1,12 +1,5 @@
 import React from "react";
-import {
-  Box,
-  Container,
-  Divider,
-  Link,
-  Stack,
-  Typography,
-} from "@mui/material";
+import { Box, Container, Divider, Stack, Typography } from "@mui/material";
 import TopBar from "../components/TopBar";
 import BrandHeader from "../components/BrandHeader";
 import Footer from "../components/Footer";
@@ -28,172 +21,79 @@ const API: React.FC = () => {
           }}
         >
           <Typography variant="h4" component="h1" gutterBottom>
-            SNPWay API Guide
+            AnnoQ Libraries
           </Typography>
           <Typography variant="body1" color="text.secondary">
-            SNPWay uses a two-step backend workflow. First, it returns fast
-            variant-key to gene mappings (rsID or chr:pos). Then, only when a
-            download is requested, it fetches
-            PANTHER gene metadata in a separate call.
+            SNPWay now serves as the shared workflow UI for the Python package
+            annoq-py and the R package AnnoQR. Both libraries call the same backend
+            workflow, which returns a compact payload containing the SNP-to-gene
+            mappings, PANTHER metadata, and normalized overrepresentation rows.
           </Typography>
 
           <Divider sx={{ my: 3 }} />
 
           <Stack spacing={2}>
-            <Typography variant="h6">Backend endpoints</Typography>
-            <Typography variant="body2">
-              <strong>POST</strong> /gene_mappings
-            </Typography>
-            <Typography variant="body2">
-              <strong>POST</strong> /panther_gene_info
-            </Typography>
-            <Typography variant="body2">
-              Local docs when backend is running: <Link href="http://localhost:8002/docs" target="_blank" rel="noopener">http://localhost:8002/docs</Link>
-            </Typography>
+            <Typography variant="h6">Python</Typography>
+            <Box
+              component="pre"
+              sx={{ p: 2, bgcolor: "grey.100", borderRadius: 1, overflowX: "auto" }}
+            >
+{`import annoq
+
+mapping = annoq.get_snpway_gene_mappings(
+    rsid_list=["rs1219648", "rs2912774"]
+)
+
+workflow = annoq.run_snpway_overrepresentation_workflow(
+    rsid_list=["rs1219648", "rs2912774"],
+    annot_data_set="GO:0008150",
+    correction="FDR",
+    enrichment_test_type="FISHER",
+)
+
+print(mapping["gene_list"])
+print(len(workflow["overrepresentation_results"]))
+print(len(workflow["overrepresentation_significant_results"]))`}
+            </Box>
+
+            <Typography variant="h6">R</Typography>
+            <Box
+              component="pre"
+              sx={{ p: 2, bgcolor: "grey.100", borderRadius: 1, overflowX: "auto" }}
+            >
+{`library(AnnoQR)
+
+mapping <- snpwayGeneMappingsQuery(
+  rsid_list = c("rs1219648", "rs2912774")
+)
+
+workflow <- snpwayOverrepresentationWorkflowQuery(
+  rsid_list = c("rs1219648", "rs2912774"),
+  annot_data_set = "GO:0008150",
+  correction = "FDR",
+  enrichment_test_type = "FISHER"
+)
+
+names(mapping)
+length(workflow$overrepresentation_results)
+length(workflow$overrepresentation_significant_results)`}
+            </Box>
+
             <Typography variant="body2" color="text.secondary">
-              Both endpoints enforce a maximum of 100,000 unique genes and return
-              HTTP 422 when exceeded.
+              The backend base URL can be overridden with ANNOQ_SNPWAY_BASE_URL.
+              The clients derive significant results and CSV rows locally so the
+              wire payload stays small.
             </Typography>
           </Stack>
 
           <Divider sx={{ my: 3 }} />
 
           <Stack spacing={2}>
-            <Typography variant="h6">Request examples</Typography>
-
-            <Typography variant="subtitle2">rsID list input</Typography>
-            <Box component="pre" sx={{ p: 2, bgcolor: "grey.100", borderRadius: 1, overflowX: "auto" }}>
-{`{
-  "input_type": "rsIdList",
-  "rsIdListQuery": {
-    "rsIdList": ["rs1219648", "rs2912774", "rs2981582"]
-  }
-}`}
-            </Box>
-
-            <Typography variant="subtitle2">VCF-derived IDs input</Typography>
-            <Box component="pre" sx={{ p: 2, bgcolor: "grey.100", borderRadius: 1, overflowX: "auto" }}>
-{`{
-  "input_type": "ids",
-  "idsQuery": {
-    "ids": ["1:115921355", "1:12046063"]
-  }
-}`}
-            </Box>
+            <Typography variant="h6">Shared workflow payload</Typography>
             <Typography variant="body2" color="text.secondary">
-              For VCF mode, SNPWay uses only CHROM and POS from each row and
-              expands to all ref/alt combinations internally when querying
-              AnnoQ.
-            </Typography>
-
-            <Typography variant="subtitle2">Chromosome region input</Typography>
-            <Box component="pre" sx={{ p: 2, bgcolor: "grey.100", borderRadius: 1, overflowX: "auto" }}>
-{`{
-  "input_type": "chromosome",
-  "chrQuery": {
-    "chr": "1",
-    "start": 100000,
-    "end": 200000
-  }
-}`}
-            </Box>
-          </Stack>
-
-          <Divider sx={{ my: 3 }} />
-
-          <Stack spacing={2}>
-            <Typography variant="h6">Response shape: /gene_mappings</Typography>
-            <Box component="pre" sx={{ p: 2, bgcolor: "grey.100", borderRadius: 1, overflowX: "auto" }}>
-{`{
-  "gene_list": ["FGFR2", "..."],
-  "rsId_genes_map": {
-    "rs1219648": ["FGFR2"],
-    "chr1:115921355": ["GENE_X"]
-  }
-}`}
-            </Box>
-            <Typography variant="body2" color="text.secondary">
-              For rsID-list input, keys in rsId_genes_map are rsIDs. For
-              VCF-derived ids input, keys in rsId_genes_map use chr:pos.
-            </Typography>
-          </Stack>
-
-          <Divider sx={{ my: 3 }} />
-
-          <Stack spacing={2}>
-            <Typography variant="h6">Request/response: /panther_gene_info</Typography>
-            <Box component="pre" sx={{ p: 2, bgcolor: "grey.100", borderRadius: 1, overflowX: "auto" }}>
-{`{
-  "gene_list": ["FGFR2", "BRCA1", "TP53"]
-}`}
-            </Box>
-
-            <Box component="pre" sx={{ p: 2, bgcolor: "grey.100", borderRadius: 1, overflowX: "auto" }}>
-{`{
-  "panther_gene_info": {
-    "PTHR12345:SF1": {
-      "PANTHER_ID": "PTHR12345:SF1",
-      "PANTHER_family": "...",
-      "PANTHER_Subfamily": "...",
-      "PANTHER_Pathway": "...",
-      "Protein_Class": "...",
-      "Reactome_Pathway": "...",
-      "GO_database_MF_complete": "...",
-      "GO_database_BP_complete": "...",
-      "GO_database_CC_complete": "...",
-      "PANTHER_GO_slim_Molecular_Function": "...",
-      "PANTHER_GO_slim_Biological_Process": "...",
-      "PANTHER_GO_slim_Cellular_Component": "..."
-    }
-  },
-  "gene_panther_mapping": {
-    "FGFR2": ["PTHR12345:SF1"]
-  }
-}`}
-            </Box>
-            <Typography variant="body2" color="text.secondary">
-              This endpoint is used by the frontend during download preparation.
-              Internally, the backend queries PANTHER geneinfo in sequential
-              batches of 1000 genes.
-            </Typography>
-          </Stack>
-
-          <Divider sx={{ my: 3 }} />
-
-          <Stack spacing={2}>
-            <Typography variant="h6">cURL examples</Typography>
-            <Box component="pre" sx={{ p: 2, bgcolor: "grey.100", borderRadius: 1, overflowX: "auto" }}>
-{`curl -X POST http://localhost:8002/gene_mappings \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "input_type": "rsIdList",
-    "rsIdListQuery": {"rsIdList": ["rs1219648", "rs2912774"]}
-  }'`}
-            </Box>
-
-            <Box component="pre" sx={{ p: 2, bgcolor: "grey.100", borderRadius: 1, overflowX: "auto" }}>
-{`curl -X POST http://localhost:8002/panther_gene_info \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "gene_list": ["FGFR2", "BRCA1", "TP53"]
-  }'`}
-            </Box>
-
-            <Typography variant="h6">Frontend enrichment endpoint</Typography>
-            <Typography variant="body2">
-              SNPWay frontend submits gene lists to PANTHER overrepresentation:
-              <Link
-                href="https://pantherdb.org/services/oai/pantherdb/enrich/overrep"
-                target="_blank"
-                rel="noopener"
-                sx={{ ml: 1 }}
-              >
-                pantherdb.org/services/oai/pantherdb/enrich/overrep
-              </Link>
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              PANTHER overrepresentation supports up to 100,000 genes. SNPWay
-              validates this before making the enrichment request.
+              The workflow response contains only the compact data needed by the
+              clients: gene_list, rsId_genes_map, panther_gene_info,
+              gene_panther_mapping, and overrepresentation_results.
             </Typography>
           </Stack>
         </Box>

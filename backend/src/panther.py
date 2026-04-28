@@ -4,7 +4,6 @@ import httpx
 
 from src.models import GeneInfo
 
-
 PANTHER_GENEINFO_BATCH_SIZE = 1000
 
 
@@ -26,7 +25,7 @@ async def get_panther_info(
     if not gene_list:
         return panther_gene_info, gene_panther_mapping
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=60.0) as client:
         for start in range(0, len(gene_list), PANTHER_GENEINFO_BATCH_SIZE):
             batch_index = (start // PANTHER_GENEINFO_BATCH_SIZE) + 1
             chunk = gene_list[start : start + PANTHER_GENEINFO_BATCH_SIZE]

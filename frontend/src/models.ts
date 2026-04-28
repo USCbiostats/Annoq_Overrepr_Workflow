@@ -13,6 +13,19 @@ export type GeneInfo = {
     PANTHER_GO_slim_Cellular_Component: string;
 }
 
+export type OverrepresentationResultItem = {
+    termId: string;
+    process: string;
+    refCount: number;
+    uploadCount: number;
+    expected: number;
+    foldEnrichment: number;
+    overUnder: string;
+    pValue: number;
+    fdr: number;
+    mapped_ids: string[];
+}
+
 export type GeneMappingResponse = {
     gene_list: string[]; // List of all genes
     rsId_genes_map: Record<string, string[]>; // Mapping of variant key (rsID or chr:pos) to genes
@@ -24,3 +37,9 @@ export type PantherGeneInfoResponse = {
 }
 
 export type GeneMappingDownloadData = GeneMappingResponse & PantherGeneInfoResponse;
+
+export type WorkflowGeneMappingsResponse = GeneMappingDownloadData;
+
+export type WorkflowOverrepresentationResponse = GeneMappingDownloadData & {
+    overrepresentation_results: OverrepresentationResultItem[];
+}

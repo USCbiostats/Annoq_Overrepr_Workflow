@@ -116,7 +116,7 @@ const Tutorial: React.FC = () => {
           </Typography>
           <Typography variant="body1" sx={{ mt: 1 }}>
             <Link component={RouterLink} to="/tutorial/results-interpretation">
-              [Insert link to interpretation guide]
+              Results Interpretation Guide
             </Link>
           </Typography>
 

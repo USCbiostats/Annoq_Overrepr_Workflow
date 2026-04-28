@@ -1,4 +1,4 @@
-import { GeneMappingResponse, PantherGeneInfoResponse } from "./models";
+import { WorkflowOverrepresentationResponse } from "./models";
 
 export const MAX_OVERREP_GENE_COUNT = 100000;
 
@@ -19,62 +19,27 @@ const parseJsonResponse = async <T>(response: Response): Promise<T> => {
   return (await response.json()) as T;
 };
 
-export const getGeneMappings = async (
-  payload: any
-): Promise<GeneMappingResponse> => {
-  const response = await fetch(
-    `${import.meta.env.VITE_BACKEND_BASE_URL ?? ""}/gene_mappings`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    }
-  );
-  return parseJsonResponse<GeneMappingResponse>(response);
-};
-
-export const getPantherGeneInfo = async (
-  geneList: string[]
-): Promise<PantherGeneInfoResponse> => {
-  const response = await fetch(
-    `${import.meta.env.VITE_BACKEND_BASE_URL ?? ""}/panther_gene_info`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ gene_list: geneList }),
-    }
-  );
-
-  return parseJsonResponse<PantherGeneInfoResponse>(response);
-};
-
-export const getOverrepresentation = async (
-  geneInputList: string,
+export const runWorkflowOverrepresentation = async (
+  payload: any,
   annotDataSet: string,
   correction: string,
   enrichmentTestType: string
-): Promise<any> => {
-  const payload = {
-    geneInputList,
-    annotDataSet,
-    organism: "9606",
-    mappedInfo: "COMP_LIST",
-    correction,
-    enrichmentTestType,
-  };
+): Promise<WorkflowOverrepresentationResponse> => {
   const response = await fetch(
-    `https://pantherdb.org/services/oai/pantherdb/enrich/overrep`,
+    `${import.meta.env.VITE_BACKEND_BASE_URL ?? ""}/workflow/overrepresentation`,
     {
       method: "POST",
       headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
+        "Content-Type": "application/json",
       },
-      body: new URLSearchParams(payload),
+      body: JSON.stringify({
+        ...payload,
+        annotDataSet,
+        correction,
+        enrichmentTestType,
+      }),
     }
   );
-  return parseJsonResponse<any>(response);
+
+  return parseJsonResponse<WorkflowOverrepresentationResponse>(response);
 };

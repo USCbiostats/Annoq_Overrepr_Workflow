@@ -137,9 +137,7 @@ def _chr_pos_to_annoq_variant_ids(chr_pos_id: str) -> list[str]:
     annoq_chr = normalized_chr[3:]
 
     return [
-        f"{annoq_chr}:{position}{ref}>{alt}"
-        for ref in DNA_BASES
-        for alt in DNA_BASES
+        f"{annoq_chr}:{position}{ref}>{alt}" for ref in DNA_BASES for alt in DNA_BASES
     ]
 
 
@@ -153,9 +151,7 @@ def _expand_ids_for_annoq(raw_ids: list[str]) -> list[str]:
             continue
 
         candidates = (
-            _chr_pos_to_annoq_variant_ids(text)
-            if _is_chr_pos_only_id(text)
-            else [text]
+            _chr_pos_to_annoq_variant_ids(text) if _is_chr_pos_only_id(text) else [text]
         )
 
         for candidate in candidates:
@@ -300,7 +296,7 @@ async def get_download_url(gql_query: str) -> str:
     headers = {"Content-Type": "application/json"}
     # Retrieve the download URL from the Annoq API
     try:
-        async with httpx.AsyncClient(verify=False) as client:
+        async with httpx.AsyncClient(verify=False, timeout=60.0) as client:
             response = await client.post(
                 ANNOQ_GQL_URL, json={"query": gql_query}, headers=headers
             )
@@ -321,7 +317,7 @@ async def download_data(download_url: str) -> pd.DataFrame:
 
     try:
         # Download file using httpx library
-        async with httpx.AsyncClient(verify=False) as client:
+        async with httpx.AsyncClient(verify=False, timeout=60.0) as client:
             response = await client.get(download_url)
             response.raise_for_status()
 
