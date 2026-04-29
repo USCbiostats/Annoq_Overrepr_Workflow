@@ -5,6 +5,7 @@ from typing import Any
 import httpx
 import pandas as pd
 
+from src.config import config
 from src.gene_cols import GENE_COLS
 from src.query import (
     ChromosomeQuery,
@@ -291,20 +292,17 @@ def create_keyword_query(query: KeywordQuery) -> Any:
 
 
 async def get_download_url(gql_query: str) -> str:
-    ANNOQ_GQL_URL = "https://api-v2.annoq.org/graphql"
-
     headers = {"Content-Type": "application/json"}
-    # Retrieve the download URL from the Annoq API
     try:
         async with httpx.AsyncClient(verify=False, timeout=60.0) as client:
             response = await client.post(
-                ANNOQ_GQL_URL, json={"query": gql_query}, headers=headers
+                config.annotation_api_v2,
+                json={"query": gql_query},
+                headers=headers,
             )
             response.raise_for_status()
             download_url = response.json()["data"]["download"]
-            url_prefix = "https://api-v2.annoq.org/download"
-            download_url = f"{url_prefix}{download_url}"
-            return download_url
+            return f"{config.annotation_download_v2}{download_url}"
     except httpx.HTTPError as e:
         print(f"Error: {e}")
         raise Exception("Failed to retrieve download URL")

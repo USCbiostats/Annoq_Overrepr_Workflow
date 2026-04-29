@@ -3,12 +3,14 @@
 import warnings
 from typing import Any
 
-from fastapi import FastAPI, status
+from fastapi import FastAPI, Request, status
 from fastapi.exceptions import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import FileResponse
 
+from src.analytics import send_event
 from src.annoq import get_annoq_df, get_rsid_gene_mapping
 from src.models import (
     WorkflowGeneMappingsResponse,
@@ -51,6 +53,22 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def ga_track_endpoints(request: Request, call_next):
+    response = await call_next(request)
+    route = request.scope.get("route")
+    if isinstance(route, APIRoute):
+        await send_event(
+            "api_request",
+            {
+                "endpoint": route.path,
+                "method": request.method,
+                "status": response.status_code,
+            },
+        )
+    return response
 
 
 def _resolve_query(
