@@ -207,7 +207,7 @@ function Home() {
                   sx={{ maxWidth: 800 }}
                 >
                   Start with SNPs or rsIDs, collect gene mappings through AnnoQ,
-                  then launch PANTHER enrichment without switching tools.
+                  then launch PANTHER enrichment without switching tools. Please note, SNPWay is based on GRCh37/hg19.
                 </Typography>
               </Box>
               <Stack direction="row" spacing={2}>
@@ -215,8 +215,14 @@ function Home() {
                   variant="contained"
                   color="primary"
                   onClick={() => {
-                    const el = document.getElementById("snpway-inputs");
-                    if (el) el.scrollIntoView({ behavior: "smooth" });
+                    if (currentStage !== 1) {
+                      resetAnalysis();
+                    }
+                    requestAnimationFrame(() => {
+                      document
+                        .getElementById("snpway-inputs")
+                        ?.scrollIntoView({ behavior: "smooth" });
+                    });
                   }}
                   sx={{ fontWeight: 700, whiteSpace: "nowrap" }}
                 >

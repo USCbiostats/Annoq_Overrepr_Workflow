@@ -18,11 +18,11 @@ export type OverrepresentationResultItem = {
     process: string;
     refCount: number;
     uploadCount: number;
-    expected: number;
-    foldEnrichment: number;
+    expected: number | null;
+    foldEnrichment: number | null;
     overUnder: string;
-    pValue: number;
-    fdr: number;
+    pValue: number | null;
+    fdr: number | null;
     mapped_ids: string[];
 }
 

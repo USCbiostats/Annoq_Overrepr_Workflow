@@ -6,6 +6,7 @@ from typing import Any
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import ORJSONResponse
 from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import FileResponse
@@ -42,7 +43,7 @@ class NoCacheStaticFiles(StaticFiles):
 
 warnings.filterwarnings("ignore")
 
-app = FastAPI()
+app = FastAPI(default_response_class=ORJSONResponse)
 MAX_PANTHER_GENE_COUNT = 100000
 
 origins = ["*"]

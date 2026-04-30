@@ -102,10 +102,10 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
 
     return tableData.filter((row) => {
       if (correctionType === CorrectionType.FDR) {
-        return row.fdr < 0.05;
+        return row.fdr !== null && row.fdr < 0.05;
       }
 
-      return row.pValue < 0.05;
+      return row.pValue !== null && row.pValue < 0.05;
     });
   }, [workflowResponse, tableData, correctionType]);
 
@@ -145,6 +145,10 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
     return [...data].sort((a, b) => {
       const aValue = a[sortKey];
       const bValue = b[sortKey];
+
+      if (aValue == null && bValue == null) return 0;
+      if (aValue == null) return 1;
+      if (bValue == null) return -1;
 
       if (typeof aValue === "string" && typeof bValue === "string") {
         return direction === "asc"
@@ -457,9 +461,11 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
             column.dataKey === "expected" ||
             column.dataKey === "foldEnrichment"
           ) {
-            content = (row[column.dataKey] as number).toFixed(2);
+            const value = row[column.dataKey];
+            content = value == null ? "—" : value.toFixed(2);
           } else if (column.dataKey === "pValue" || column.dataKey === "fdr") {
-            content = (row[column.dataKey] as number).toExponential(2);
+            const value = row[column.dataKey];
+            content = value == null ? "—" : value.toExponential(2);
           }
 
           if (column.dataKey === "uploadCount") {
