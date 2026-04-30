@@ -1,4 +1,4 @@
-import { GeneMappingResponse } from "../models";
+import { GeneMappingDownloadData } from "../models";
 
 // Interface for the table row structure
 export interface ResultTableRow {
@@ -73,7 +73,7 @@ const getRelevantColumns = (
 };
 
 export const createResultsTableData = (
-  geneMappingResponse: GeneMappingResponse,
+  geneMappingResponse: GeneMappingDownloadData,
   pantherIdsToInclude?: string[],
   annotationDataset?: string
 ): ResultTableRow[] => {
@@ -162,7 +162,7 @@ export const createResultsTableData = (
 };
 
 export const createSubsetResultsTableData = (
-  geneMappingResponse: GeneMappingResponse,
+  geneMappingResponse: GeneMappingDownloadData,
   pantherIdsInSubset: string[]
 ): ResultTableRow[] => {
   return createResultsTableData(geneMappingResponse, pantherIdsInSubset);

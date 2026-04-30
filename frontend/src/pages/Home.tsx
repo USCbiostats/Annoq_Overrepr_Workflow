@@ -16,19 +16,21 @@ import {
   Stack,
   Button,
 } from "@mui/material";
-import { CorrectionType, TestType } from "../constants";
-import { getGeneMappings, getOverrepresentation } from "../apis";
+import { CorrectionType, InputTypes, TestType } from "../constants";
+import {
+  runWorkflowOverrepresentation,
+  MAX_OVERREP_GENE_COUNT,
+} from "../apis";
 import Footer from "../components/Footer";
-import { GeneMappingResponse } from "../models";
+import { WorkflowOverrepresentationResponse } from "../models";
 import ResultDisplay from "../components/ResultDisplay";
 
 function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null as string | null);
   const [success, setSuccess] = useState(false);
-  const [response, setResponse] = useState(null as GeneMappingResponse | null);
-  const [overrepresentationResult, setOverrepresentationResult] = useState(
-    null as any
+  const [workflowResponse, setWorkflowResponse] = useState(
+    null as WorkflowOverrepresentationResponse | null
   );
   const [currentStage, setCurrentStage] = useState(1);
   const [pantherId, setPantherId] = useState({
@@ -36,6 +38,8 @@ function Home() {
     correction: "" as CorrectionType,
     testType: "" as TestType,
   });
+  const [resultInputType, setResultInputType] =
+    useState<InputTypes | null>(null);
 
   const onRunTest = async (
     payload: any,
@@ -48,8 +52,13 @@ function Home() {
     setSuccess(false);
 
     try {
-      const response = await getGeneMappings(payload);
-      setResponse(response);
+      const response = await runWorkflowOverrepresentation(
+        payload,
+        dataset,
+        correction,
+        testType
+      );
+      setWorkflowResponse(response);
 
       if (!response) {
         setError("No data returned from the server. Please try again.");
@@ -60,17 +69,14 @@ function Home() {
         return;
       }
 
-      const overrepresentationResponse = await getOverrepresentation(
-        response.gene_list.join(","),
-        dataset,
-        correction,
-        testType
-      );
-      if (!overrepresentationResponse) {
-        setError("No data returned from the server. Please try again.");
+      if (response.gene_list.length > MAX_OVERREP_GENE_COUNT) {
+        setError(
+          "We support a maximum of 100,000 unique genes for PANTHER overrepresentation. " +
+            `Your input produced ${response.gene_list.length.toLocaleString()} unique genes. ` +
+            "Please narrow the query range and try again."
+        );
         return;
       }
-      setOverrepresentationResult(overrepresentationResponse);
 
       setPantherId({
         dataset,
@@ -78,17 +84,28 @@ function Home() {
         testType,
       });
 
+      const nextResultInputType: InputTypes | null =
+        payload?.input_type === "ids"
+          ? InputTypes.VCF
+          : payload?.input_type === InputTypes.CHROMOSOME
+          ? InputTypes.CHROMOSOME
+          : payload?.input_type === InputTypes.RSIDS
+          ? InputTypes.RSIDS
+          : null;
+
+      setResultInputType(nextResultInputType);
+
       setCurrentStage(2);
       setSuccess(true);
     } catch (error: any) {
-      setError("Error occurred while fetching data. Please try again.");
+      setError(error?.message || "Error occurred while fetching data. Please try again.");
     } finally {
       setIsLoading(false);
     }
   };
 
   const submitToPanther = () => {
-    if (!response?.gene_list.length) {
+    if (!workflowResponse?.gene_list.length) {
       setError("No gene list available. Please run the analysis again.");
       return;
     }
@@ -131,7 +148,7 @@ function Home() {
     const inputField = document.createElement("input");
     inputField.type = "hidden";
     inputField.name = "geneInputList";
-    inputField.value = response.gene_list.join(",");
+    inputField.value = workflowResponse.gene_list.join(",");
 
     form.appendChild(correctionField);
     form.appendChild(datasetField);
@@ -152,9 +169,9 @@ function Home() {
 
   const resetAnalysis = () => {
     setCurrentStage(1);
-    setResponse(null);
-    setOverrepresentationResult(null);
+    setWorkflowResponse(null);
     setError(null);
+    setResultInputType(null);
   };
 
   return (
@@ -190,7 +207,7 @@ function Home() {
                   sx={{ maxWidth: 800 }}
                 >
                   Start with SNPs or rsIDs, collect gene mappings through AnnoQ,
-                  then launch PANTHER enrichment without switching tools.
+                  then launch PANTHER enrichment without switching tools. Please note, SNPWay is based on GRCh37/hg19.
                 </Typography>
               </Box>
               <Stack direction="row" spacing={2}>
@@ -198,8 +215,14 @@ function Home() {
                   variant="contained"
                   color="primary"
                   onClick={() => {
-                    const el = document.getElementById("snpway-inputs");
-                    if (el) el.scrollIntoView({ behavior: "smooth" });
+                    if (currentStage !== 1) {
+                      resetAnalysis();
+                    }
+                    requestAnimationFrame(() => {
+                      document
+                        .getElementById("snpway-inputs")
+                        ?.scrollIntoView({ behavior: "smooth" });
+                    });
                   }}
                   sx={{ fontWeight: 700, whiteSpace: "nowrap" }}
                 >
@@ -281,12 +304,12 @@ function Home() {
           </Box>
         ) : (
           <ResultDisplay
-            response={response}
-            overrepresentationResult={overrepresentationResult}
+            workflowResponse={workflowResponse}
             resetAnalysis={resetAnalysis}
             submitToPanther={submitToPanther}
             annotationDataset={pantherId.dataset}
             correctionType={pantherId.correction}
+            inputTypeUsed={resultInputType}
           />
         )}
 

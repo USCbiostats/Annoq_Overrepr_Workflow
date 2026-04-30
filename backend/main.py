@@ -1,18 +1,24 @@
 # Create a basic fastapi server
 
 import warnings
-from typing import Annotated, Any
+from typing import Any
 
-from fastapi import Body, FastAPI, Request, status
+from fastapi import FastAPI, Request, status
 from fastapi.exceptions import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import ORJSONResponse
 from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import FileResponse
 
 from src.analytics import send_event
 from src.annoq import get_annoq_df, get_rsid_gene_mapping
-from src.models import GeneMappingsResponse
+from src.models import (
+    WorkflowGeneMappingsResponse,
+    WorkflowInputRequest,
+    WorkflowOverrepresentationRequest,
+    WorkflowOverrepresentationResponse,
+)
 from src.panther import get_panther_info
 from src.query import (
     ChromosomeQuery,
@@ -23,6 +29,7 @@ from src.query import (
     RsIdListQuery,
     RsIdQuery,
 )
+from src.workflow import get_overrepresentation, parse_overrepresentation_results
 
 
 class NoCacheStaticFiles(StaticFiles):
@@ -36,7 +43,8 @@ class NoCacheStaticFiles(StaticFiles):
 
 warnings.filterwarnings("ignore")
 
-app = FastAPI()
+app = FastAPI(default_response_class=ORJSONResponse)
+MAX_PANTHER_GENE_COUNT = 100000
 
 origins = ["*"]
 
@@ -64,52 +72,164 @@ async def ga_track_endpoints(request: Request, call_next):
     return response
 
 
-@app.post("/gene_mappings")
-async def gene_mappings(
-    input_type: Annotated[InputType, Body(...)],
-    chrQuery: ChromosomeQuery | None = None,
-    rsIdQuery: RsIdQuery | None = None,
-    rsIdListQuery: RsIdListQuery | None = None,
-    idsQuery: IdsQuery | None = None,
-    geneQuery: GeneQuery | None = None,
-    keywordQuery: KeywordQuery | None = None,
-) -> GeneMappingsResponse:
-    query: Any = None
+def _resolve_query(
+    input_type: InputType,
+    chrQuery: ChromosomeQuery | None,
+    rsIdQuery: RsIdQuery | None,
+    rsIdListQuery: RsIdListQuery | None,
+    idsQuery: IdsQuery | None,
+    geneQuery: GeneQuery | None,
+    keywordQuery: KeywordQuery | None,
+) -> Any:
     if input_type == InputType.chromosome:
-        query = chrQuery
-    elif input_type == InputType.rsId:
-        query = rsIdQuery
-    elif input_type == InputType.rsIdList:
-        query = rsIdListQuery
-    elif input_type == InputType.ids:
-        query = idsQuery
-    elif input_type == InputType.gene:
-        query = geneQuery
-    elif input_type == InputType.keyword:
-        query = keywordQuery
+        return chrQuery
+    if input_type == InputType.rsId:
+        return rsIdQuery
+    if input_type == InputType.rsIdList:
+        return rsIdListQuery
+    if input_type == InputType.ids:
+        return idsQuery
+    if input_type == InputType.gene:
+        return geneQuery
+    if input_type == InputType.keyword:
+        return keywordQuery
+    return None
 
+
+def _build_unique_genes(rs_id_gene_mapping: dict[str, list[str]]) -> list[str]:
+    all_unique_genes_set: set[str] = set()
+    for genes in rs_id_gene_mapping.values():
+        all_unique_genes_set.update(genes)
+    return list(all_unique_genes_set)
+
+
+def _validate_panther_gene_limit(gene_list: list[str]) -> None:
+    if len(gene_list) > MAX_PANTHER_GENE_COUNT:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "Input exceeds PANTHER limit of 100,000 unique genes. "
+                f"Found {len(gene_list)} unique genes."
+            ),
+        )
+
+
+async def _run_mapping_pipeline(
+    input_type: InputType,
+    chrQuery: ChromosomeQuery | None,
+    rsIdQuery: RsIdQuery | None,
+    rsIdListQuery: RsIdListQuery | None,
+    idsQuery: IdsQuery | None,
+    geneQuery: GeneQuery | None,
+    keywordQuery: KeywordQuery | None,
+) -> tuple[list[str], dict[str, list[str]]]:
+    query: Any = _resolve_query(
+        input_type,
+        chrQuery,
+        rsIdQuery,
+        rsIdListQuery,
+        idsQuery,
+        geneQuery,
+        keywordQuery,
+    )
+
+    df = await get_annoq_df(input_type, query)
+    force_chr_pos_keys = input_type == InputType.ids and idsQuery is not None
+
+    rs_id_gene_mapping = get_rsid_gene_mapping(
+        df,
+        force_chr_pos_keys=force_chr_pos_keys,
+    )
+
+    all_unique_genes = _build_unique_genes(rs_id_gene_mapping)
+    _validate_panther_gene_limit(all_unique_genes)
+    return all_unique_genes, rs_id_gene_mapping
+
+
+@app.post("/workflow/gene_mappings")
+async def workflow_gene_mappings(
+    request: WorkflowInputRequest,
+) -> WorkflowGeneMappingsResponse:
     try:
-        df = await get_annoq_df(input_type, query)
-        rs_id_gene_mapping = get_rsid_gene_mapping(df)
+        all_unique_genes, rs_id_gene_mapping = await _run_mapping_pipeline(
+            request.input_type,
+            request.chrQuery,
+            request.rsIdQuery,
+            request.rsIdListQuery,
+            request.idsQuery,
+            request.geneQuery,
+            request.keywordQuery,
+        )
 
-        # Get all unique genes
-        all_unique_genes_set = set()
-        for genes in rs_id_gene_mapping.values():
-            all_unique_genes_set.update(genes)
-        all_unique_genes = list(all_unique_genes_set)
+        if not all_unique_genes:
+            return WorkflowGeneMappingsResponse(
+                gene_list=[],
+                rsId_genes_map={},
+                panther_gene_info={},
+                gene_panther_mapping={},
+            )
 
-        # Get PANTHER information for the unique genes
-        panther_gene_info, gene_panther_mapping = await get_panther_info(
+        panther_gene_info_data, gene_panther_mapping_data = await get_panther_info(
             all_unique_genes
         )
 
-        return GeneMappingsResponse(
+        return WorkflowGeneMappingsResponse(
             gene_list=all_unique_genes,
             rsId_genes_map=rs_id_gene_mapping,
-            panther_gene_info=panther_gene_info,
-            gene_panther_mapping=gene_panther_mapping,
+            panther_gene_info=panther_gene_info_data,
+            gene_panther_mapping=gene_panther_mapping_data,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
         )
 
+
+@app.post("/workflow/overrepresentation")
+async def workflow_overrepresentation(
+    request: WorkflowOverrepresentationRequest,
+) -> WorkflowOverrepresentationResponse:
+    try:
+        all_unique_genes, rs_id_gene_mapping = await _run_mapping_pipeline(
+            request.input_type,
+            request.chrQuery,
+            request.rsIdQuery,
+            request.rsIdListQuery,
+            request.idsQuery,
+            request.geneQuery,
+            request.keywordQuery,
+        )
+
+        if all_unique_genes:
+            panther_gene_info_data, gene_panther_mapping_data = await get_panther_info(
+                all_unique_genes
+            )
+            overrepresentation_raw = await get_overrepresentation(
+                gene_list=all_unique_genes,
+                annot_data_set=request.annotDataSet,
+                correction=request.correction.value,
+                enrichment_test_type=request.enrichmentTestType.value,
+            )
+        else:
+            panther_gene_info_data = {}
+            gene_panther_mapping_data = {}
+            overrepresentation_raw = {"results": {"result": []}}
+
+        overrepresentation_results = parse_overrepresentation_results(
+            overrepresentation_raw
+        )
+
+        return WorkflowOverrepresentationResponse(
+            gene_list=all_unique_genes,
+            rsId_genes_map=rs_id_gene_mapping,
+            panther_gene_info=panther_gene_info_data,
+            gene_panther_mapping=gene_panther_mapping_data,
+            overrepresentation_results=overrepresentation_results,
+        )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)

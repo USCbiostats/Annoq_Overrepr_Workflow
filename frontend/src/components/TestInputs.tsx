@@ -1,6 +1,7 @@
 import * as React from "react";
 import { useState } from "react";
 import {
+  Alert,
   Button,
   TextField,
   Select,
@@ -53,6 +54,71 @@ const TestInputs: React.FC<TestInputsProps> = ({
   const [testType, setTestType] = useState(TestType.FISHER);
   const [annotDataSet, setAnnotDataSet] = useState(Datasets[0].value);
   const [correction, setCorrection] = useState(CorrectionType.FDR);
+  const [inputError, setInputError] = useState<string | null>(null);
+
+  const normalizeChromosome = (rawChromosome: string): string => {
+    const trimmed = rawChromosome.trim();
+    if (!trimmed) return "";
+    const withoutPrefix = trimmed.replace(/^chr/i, "");
+    return withoutPrefix;
+  };
+
+  const toChrPosId = (rawChromosome: string, pos: string): string => {
+    const chromosome = normalizeChromosome(rawChromosome);
+    return `${chromosome}:${pos}`;
+  };
+
+  const parseVcfToIds = (
+    rawVcf: string
+  ): { ids: string[]; invalidRows: number } => {
+    const ids: string[] = [];
+    let invalidRows = 0;
+
+    for (const line of rawVcf.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) {
+        continue;
+      }
+
+      // Prefer tab parsing so empty fields are preserved.
+      let chrom = "";
+      let pos = "";
+
+      const tabFields = trimmed.split("\t");
+      if (tabFields.length >= 2) {
+        // VCF columns: CHROM POS ...
+        chrom = tabFields[0];
+        pos = tabFields[1];
+      } else {
+        // Fallback for whitespace-separated rows (tabs replaced by spaces, etc.).
+        const wsFields = trimmed.split(/\s+/);
+        if (wsFields.length >= 2) {
+          // CHROM POS ...
+          chrom = wsFields[0];
+          pos = wsFields[1];
+        } else {
+          invalidRows += 1;
+          continue;
+        }
+      }
+
+      const normalizedChrom = normalizeChromosome(chrom);
+      const normalizedPos = pos.trim();
+
+      if (
+        !normalizedChrom ||
+        !normalizedPos ||
+        !/^\d+$/.test(normalizedPos)
+      ) {
+        invalidRows += 1;
+        continue;
+      }
+
+      ids.push(toChrPosId(normalizedChrom, normalizedPos));
+    }
+
+    return { ids, invalidRows };
+  };
 
   const submitDisabled =
     isLoading ||
@@ -65,7 +131,7 @@ const TestInputs: React.FC<TestInputsProps> = ({
     const data: Record<string, any> = {};
 
     if (inputType === InputTypes.CHROMOSOME) {
-      data["chr"] = chromosome;
+      data["chr"] = normalizeChromosome(chromosome);
       data["start"] = startPosition;
       data["end"] = endPosition;
 
@@ -74,27 +140,34 @@ const TestInputs: React.FC<TestInputsProps> = ({
         chrQuery: data,
       };
     } else if (inputType === InputTypes.VCF) {
-      const ids = vcfFile
-        .split("\n")
-        .filter((element) => {
-          const regex = /^#/;
-          return !regex.test(element) && element;
-        })
-        .map((s) => {
-          const line = s.trim().split("\t");
-          return `${line[0].replace("chr", "")}:${line[1]}${line[3]}>${
-            line[4]
-          }`;
-        });
+      const { ids, invalidRows } = parseVcfToIds(vcfFile);
+      const uniqueIds = Array.from(new Set(ids));
 
-      data["ids"] = ids;
+      if (uniqueIds.length === 0) {
+        throw new Error(
+          "No valid variants were found in the VCF input. Make sure each row includes CHROM and POS."
+        );
+      }
+
+      if (invalidRows > 0) {
+        setInputError(
+          `Skipped ${invalidRows} invalid VCF row(s). Continue with ${uniqueIds.length} valid position(s).`
+        );
+      }
+
+      data["ids"] = uniqueIds;
 
       return {
         input_type: "ids",
         idsQuery: data,
       };
     } else {
-      data["rsIdList"] = process_rsids(rsIds);
+      const parsedRsids = process_rsids(rsIds);
+      if (parsedRsids.length === 0) {
+        throw new Error("No valid rsIDs were found in the input.");
+      }
+
+      data["rsIdList"] = parsedRsids;
 
       return {
         input_type: inputType,
@@ -104,8 +177,13 @@ const TestInputs: React.FC<TestInputsProps> = ({
   };
 
   const handleRunTest = () => {
-    const data = query_data();
-    onRunTest(data, annotDataSet, testType, correction);
+    setInputError(null);
+    try {
+      const data = query_data();
+      onRunTest(data, annotDataSet, testType, correction);
+    } catch (error) {
+      setInputError((error as Error).message);
+    }
   };
 
   const handleReset = () => {
@@ -119,6 +197,7 @@ const TestInputs: React.FC<TestInputsProps> = ({
     setAnnotDataSet(Datasets[0].value);
     setCorrection(CorrectionType.FDR);
     setAdvancedOptions(false);
+    setInputError(null);
     onReset();
   };
 
@@ -134,7 +213,6 @@ const TestInputs: React.FC<TestInputsProps> = ({
 
       reader.onload = () => {
         callback((reader.result || "").toString());
-        setRsIds((reader.result || "").toString());
       };
     }
   };
@@ -255,7 +333,6 @@ const TestInputs: React.FC<TestInputsProps> = ({
                       <UploadFile />
                       Populate from file
                       <input
-                        accept=".txt, .csv, .tsv"
                         style={{ display: "none" }}
                         type="file"
                         onChange={(event) => {
@@ -388,6 +465,12 @@ const TestInputs: React.FC<TestInputsProps> = ({
                   Reset
                 </Button>
               </Stack>
+
+              {inputError && (
+                <Alert severity="warning" sx={{ mt: 1 }}>
+                  {inputError}
+                </Alert>
+              )}
             </Stack>
           </fieldset>
         </FormGroup>

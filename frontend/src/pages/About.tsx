@@ -1,5 +1,6 @@
 import React from "react";
 import { Box, Container, Link, Stack, Typography } from "@mui/material";
+import { Link as RouterLink } from "react-router-dom";
 import TopBar from "../components/TopBar";
 import BrandHeader from "../components/BrandHeader";
 import Footer from "../components/Footer";
@@ -28,9 +29,9 @@ const About: React.FC = () => {
             About SNPWay
           </Typography>
           <Typography variant="body1" color="text.secondary" paragraph>
-            We are building a straightforward path from SNP lists to gene-level
-            overrepresentation testing. Detailed copy will live here once
-            provided.
+            SNPWay provides a streamlined workflow from SNP-level input to
+            gene-level overrepresentation analysis. Variant-to-gene mapping is
+            performed with AnnoQ, and enrichment is calculated with PANTHER.
           </Typography>
 
           <Stack spacing={2} sx={{ mt: 3 }}>
@@ -56,6 +57,16 @@ const About: React.FC = () => {
             <Typography variant="body2">
               3) Interpret pathways, functions, and classes without leaving the
               workflow.
+            </Typography>
+
+            <Typography variant="h6" sx={{ pt: 1 }}>
+              Learn more
+            </Typography>
+            <Typography variant="body2">
+              Full workflow tutorial: <Link component={RouterLink} to="/tutorial">Tutorial</Link>
+            </Typography>
+            <Typography variant="body2">
+              API endpoint reference: <Link component={RouterLink} to="/api">API Guide</Link>
             </Typography>
           </Stack>
         </Box>

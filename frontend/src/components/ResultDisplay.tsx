@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import {
+  Alert,
   Typography,
   Paper,
   Box,
@@ -21,69 +22,93 @@ import InfoIcon from "@mui/icons-material/Info";
 import DownloadIcon from "@mui/icons-material/Download";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import { TableVirtuoso, TableComponents } from "react-virtuoso";
-import { GeneMappingResponse } from "../models";
-import { createResultsTableData } from "../components/utils";
-import { CorrectionType, Datasets } from "../constants";
+import {
+  OverrepresentationResultItem,
+  WorkflowOverrepresentationResponse,
+} from "../models";
+import { CorrectionType, Datasets, InputTypes } from "../constants";
+import { createResultsTableData } from "./utils";
 
 interface ResultDisplayProps {
-  response: GeneMappingResponse | null;
-  overrepresentationResult: any;
+  workflowResponse: WorkflowOverrepresentationResponse | null;
   resetAnalysis: () => void;
   submitToPanther: () => void;
   annotationDataset: string;
   correctionType: CorrectionType;
+  inputTypeUsed: InputTypes | null;
 }
 
-// Define the structure of overrepresentation result items
-interface OverrepResultItem {
-  process: string;
-  refCount: number;
-  uploadCount: number;
-  expected: number;
-  foldEnrichment: number;
-  overUnder: string;
-  pValue: number;
-  fdr: number;
-  mapped_panther_ids: string[];
-}
-
-// Define column data structure
 interface ColumnData {
-  dataKey: keyof OverrepResultItem;
+  dataKey: keyof OverrepresentationResultItem;
   label: string;
   numeric?: boolean;
   width?: number;
 }
 
-// Add type for sort direction
 type SortDirection = "asc" | "desc";
+type CsvRowValue = string | number | string[];
+type CsvRow = Record<string, CsvRowValue>;
+
+const filterRowsByGenes = (rows: CsvRow[], genesToInclude: string[]): CsvRow[] => {
+  const normalizedGenes = new Set(
+    genesToInclude.map((gene) => gene.trim()).filter((gene) => gene.length > 0)
+  );
+
+  if (normalizedGenes.size === 0) {
+    return [];
+  }
+
+  return rows.filter((row) => {
+    const mappedGenes = row.mappedGenes;
+    if (!Array.isArray(mappedGenes)) {
+      return false;
+    }
+
+    return mappedGenes.some((gene) => normalizedGenes.has(String(gene).trim()));
+  });
+};
 
 const ResultDisplay: React.FC<ResultDisplayProps> = ({
-  response,
-  overrepresentationResult,
+  workflowResponse,
   annotationDataset,
   correctionType,
   resetAnalysis,
   submitToPanther,
+  inputTypeUsed,
 }) => {
-  // Add state to track whether to show all results
   const [showAllResults, setShowAllResults] = useState(false);
-
-  // Add sort states
-  const [sortBy, setSortBy] = useState<keyof OverrepResultItem>("process");
+  const [sortBy, setSortBy] = useState<keyof OverrepresentationResultItem>(
+    "process"
+  );
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
 
-  // Add state for the download menu
   const [downloadMenuAnchor, setDownloadMenuAnchor] =
     useState<null | HTMLElement>(null);
   const isDownloadMenuOpen = Boolean(downloadMenuAnchor);
+  const [downloadMessage, setDownloadMessage] = useState<string | null>(null);
 
-  // Add state for download all columns option
   const [downloadAllColumns, setDownloadAllColumns] = useState(false);
-  // Add state for showing/hiding advanced options
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
 
-  // Helper function to get appropriate term based on annotation dataset
+  const tableData = useMemo(
+    () => workflowResponse?.overrepresentation_results || [],
+    [workflowResponse]
+  );
+
+  const significantData = useMemo(() => {
+    if (!workflowResponse) {
+      return [];
+    }
+
+    return tableData.filter((row) => {
+      if (correctionType === CorrectionType.FDR) {
+        return row.fdr !== null && row.fdr < 0.05;
+      }
+
+      return row.pValue !== null && row.pValue < 0.05;
+    });
+  }, [workflowResponse, tableData, correctionType]);
+
   const getDatasetTerms = (datasetValue: string) => {
     const dataset = Datasets.find((d) => d.value === datasetValue);
 
@@ -93,152 +118,151 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
 
     if (name.includes("biological process")) {
       return { singular: "biological process", plural: "biological processes" };
-    } else if (name.includes("molecular function")) {
-      return { singular: "molecular function", plural: "molecular functions" };
-    } else if (name.includes("cellular component")) {
-      return { singular: "cellular component", plural: "cellular components" };
-    } else if (name.includes("pathway")) {
-      return { singular: "pathway", plural: "pathways" };
-    } else if (name.includes("protein class")) {
-      return { singular: "protein class", plural: "protein classes" };
-    } else {
-      return { singular: "term", plural: "terms" };
     }
+    if (name.includes("molecular function")) {
+      return { singular: "molecular function", plural: "molecular functions" };
+    }
+    if (name.includes("cellular component")) {
+      return { singular: "cellular component", plural: "cellular components" };
+    }
+    if (name.includes("pathway")) {
+      return { singular: "pathway", plural: "pathways" };
+    }
+    if (name.includes("protein class")) {
+      return { singular: "protein class", plural: "protein classes" };
+    }
+    return { singular: "term", plural: "terms" };
   };
 
-  // Get the appropriate term for the current dataset
   const { singular: datasetTerm, plural: datasetTermsPlural } =
     getDatasetTerms(annotationDataset);
 
-  // Parse overrepresentation results
-  const { tableData, filteredData } = useMemo(() => {
-    if (!overrepresentationResult || !overrepresentationResult.results)
-      return { tableData: [], filteredData: [] };
-
-    // Extract the reference and input list info
-    const { result } = overrepresentationResult.results;
-
-    // Check if we have valid result data
-    if (!result || !Array.isArray(result))
-      return { tableData: [], filteredData: [] };
-
-    // Extract the biological processes and their data from the API response
-    const allData = result
-      .filter((item) => item && typeof item === "object")
-      .map((item, index) => {
-        let processName = "";
-        if (!item.term || !item.term.label) {
-          processName = `Process ${index + 1}`;
-        } else {
-          processName = item.term.label;
-        }
-
-        return {
-          process: processName,
-          refCount: item.number_in_reference || 0,
-          uploadCount: item.number_in_list || 0,
-          expected:
-            typeof item.expected === "number" ? +item.expected.toFixed(2) : 0,
-          foldEnrichment:
-            typeof item.fold_enrichment === "number"
-              ? +item.fold_enrichment.toFixed(2)
-              : 0,
-          overUnder: item.plus_minus || "+",
-          pValue:
-            typeof item.pValue === "number" ? +item.pValue.toExponential(2) : 0,
-          fdr: typeof item.fdr === "number" ? +item.fdr.toExponential(2) : 0,
-          mapped_panther_ids:
-            item.input_list?.mapped_panther_ids?.split(",") || [],
-        };
-      });
-
-    // Filter the data based on correction type
-    const filteredResults = allData.filter((item) => {
-      if (correctionType === CorrectionType.FDR) {
-        return item.fdr < 0.05;
-      } else {
-        return item.pValue < 0.05;
-      }
-    });
-
-    return {
-      tableData: allData,
-      filteredData: filteredResults,
-    };
-  }, [overrepresentationResult, correctionType]);
-
-  // Sort function for the data
   const sortData = (
-    data: OverrepResultItem[],
-    sortKey: keyof OverrepResultItem,
+    data: OverrepresentationResultItem[],
+    sortKey: keyof OverrepresentationResultItem,
     direction: SortDirection
   ) => {
     return [...data].sort((a, b) => {
       const aValue = a[sortKey];
       const bValue = b[sortKey];
 
-      // Handle different data types
+      if (aValue == null && bValue == null) return 0;
+      if (aValue == null) return 1;
+      if (bValue == null) return -1;
+
       if (typeof aValue === "string" && typeof bValue === "string") {
         return direction === "asc"
           ? aValue.localeCompare(bValue)
           : bValue.localeCompare(aValue);
-      } else {
-        // For numeric values
-        return direction === "asc"
-          ? (aValue as number) - (bValue as number)
-          : (bValue as number) - (aValue as number);
       }
+
+      return direction === "asc"
+        ? Number(aValue) - Number(bValue)
+        : Number(bValue) - Number(aValue);
     });
   };
 
-  // Handle sort request
-  const handleRequestSort = (property: keyof OverrepResultItem) => {
+  const handleRequestSort = (property: keyof OverrepresentationResultItem) => {
     const isAsc = sortBy === property && sortDirection === "asc";
     setSortDirection(isAsc ? "desc" : "asc");
     setSortBy(property);
   };
 
-  // Determine which data to display based on the showAllResults state and apply sorting
   const displayData = useMemo(() => {
-    const dataToSort = showAllResults ? tableData : filteredData;
+    const dataToSort = showAllResults ? tableData : significantData;
     return sortData(dataToSort, sortBy, sortDirection);
-  }, [showAllResults, tableData, filteredData, sortBy, sortDirection]);
+  }, [showAllResults, tableData, significantData, sortBy, sortDirection]);
 
-  const handleDownloadCSV = (
-    pantherIdsToInclude?: string[],
-    fileTitle?: string
-  ) => {
-    if (!response) return;
-    // Generate table data using the utility function - pass in the annotation dataset and download preference
-    const tableData = createResultsTableData(
-      response,
-      pantherIdsToInclude,
+  const allMappingRows = useMemo(() => {
+    if (!workflowResponse) {
+      return [];
+    }
+
+    return createResultsTableData(
+      workflowResponse,
+      undefined,
       downloadAllColumns ? undefined : annotationDataset
-    );
+    ) as unknown as CsvRow[];
+  }, [workflowResponse, annotationDataset, downloadAllColumns]);
 
-    // Convert the data to CSV format
-    const headers = Object.keys(tableData[0] || {});
+  const significantPantherIds = useMemo(() => {
+    if (!workflowResponse) {
+      return [];
+    }
+
+    const genes = new Set<string>();
+
+    for (const row of significantData) {
+      for (const gene of row.mapped_ids) {
+        const normalizedGene = gene.trim();
+        if (normalizedGene.length > 0) {
+          genes.add(normalizedGene);
+        }
+      }
+    }
+
+    const pantherIds = new Set<string>();
+    for (const gene of genes) {
+      const relatedPantherIds = workflowResponse.gene_panther_mapping[gene] || [];
+      for (const pantherId of relatedPantherIds) {
+        const normalizedPantherId = pantherId.trim();
+        if (normalizedPantherId.length > 0) {
+          pantherIds.add(normalizedPantherId);
+        }
+      }
+    }
+
+    return Array.from(pantherIds);
+  }, [workflowResponse, significantData]);
+
+  const significantMappingRows = useMemo(() => {
+    if (!workflowResponse) {
+      return [];
+    }
+
+    return createResultsTableData(
+      workflowResponse,
+      significantPantherIds,
+      downloadAllColumns ? undefined : annotationDataset
+    ) as unknown as CsvRow[];
+  }, [workflowResponse, significantPantherIds, annotationDataset, downloadAllColumns]);
+
+  const downloadRowsAsCSV = (rows: CsvRow[], fileTitle?: string) => {
+    if (rows.length === 0) {
+      setDownloadMessage(
+        "No rows matched this download selection. Try changing filters or download options."
+      );
+      return;
+    }
+
+    setDownloadMessage(null);
+
+    const headers = Object.keys(rows[0] || {});
+    const csvHeaders = [...headers];
+
+    if (inputTypeUsed === InputTypes.VCF && csvHeaders[0] === "rsId") {
+      csvHeaders[0] = "chr:pos";
+    }
+
     const csvRows = [
-      headers.join(","), // Header row
-      ...tableData.map((row) =>
+      csvHeaders.join(","),
+      ...rows.map((row) =>
         headers
           .map((header) => {
-            // Handle array fields and escape commas in text
-            const value = row[header as keyof typeof row];
+            const value = row[header];
             if (Array.isArray(value)) {
-              return `"${value.join(";")}"`;
+              return `"${value.join(";").replace(/"/g, '""')}"`;
             }
-            return typeof value === "string"
-              ? `"${value.replace(/"/g, '""')}"`
-              : value;
+            if (typeof value === "string") {
+              return `"${value.replace(/"/g, '""')}"`;
+            }
+            return value;
           })
           .join(",")
       ),
     ];
 
     const csvContent = csvRows.join("\n");
-
-    // Create a blob and download link
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -253,7 +277,18 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
     document.body.removeChild(link);
   };
 
-  // Handle menu open/close
+  const handleDownloadCSV = (fileTitle?: string, genesToInclude?: string[]) => {
+    const allRows = allMappingRows;
+
+    if (!genesToInclude || genesToInclude.length === 0) {
+      downloadRowsAsCSV(allRows, fileTitle);
+      return;
+    }
+
+    const filteredRows = filterRowsByGenes(allRows, genesToInclude);
+    downloadRowsAsCSV(filteredRows, fileTitle);
+  };
+
   const handleOpenDownloadMenu = (event: React.MouseEvent<HTMLElement>) => {
     setDownloadMenuAnchor(event.currentTarget);
   };
@@ -262,23 +297,33 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
     setDownloadMenuAnchor(null);
   };
 
-  // Download handlers
   const handleDownloadAll = () => {
     handleDownloadCSV();
     handleCloseDownloadMenu();
   };
 
   const handleDownloadSignificant = () => {
-    // Always use filteredData (significant results) regardless of current view
-    const significantIds = filteredData
-      .flatMap((item) => item.mapped_panther_ids)
-      .filter((id, index, self) => self.indexOf(id) === index);
+    const significantRows = significantMappingRows;
 
-    handleDownloadCSV(significantIds, `significant_gene_mappings.csv`);
+    if (significantRows.length === 0) {
+      setDownloadMessage(
+        "No significant categories are available for download with the current settings."
+      );
+      handleCloseDownloadMenu();
+      return;
+    }
+
+    downloadRowsAsCSV(significantRows, "significant_gene_mappings.csv");
     handleCloseDownloadMenu();
   };
 
-  // Define table columns
+  const correctionLabel =
+    correctionType === CorrectionType.BONFERRONI
+      ? "Bonferroni"
+      : correctionType === CorrectionType.FDR
+      ? "FDR"
+      : "No";
+
   const columns: ColumnData[] = [
     {
       width: 300,
@@ -327,7 +372,6 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
     },
   ];
 
-  // Add FDR column if correction type is not Bonferroni
   if (correctionType === CorrectionType.FDR) {
     columns.push({
       width: 100,
@@ -337,8 +381,7 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
     });
   }
 
-  // Define Virtuoso Table Components
-  const VirtuosoTableComponents: TableComponents<OverrepResultItem> = {
+  const VirtuosoTableComponents: TableComponents<OverrepresentationResultItem> = {
     Scroller: React.forwardRef<HTMLDivElement>((props, ref) => (
       <TableContainer component={Paper} {...props} ref={ref} />
     )),
@@ -357,11 +400,9 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
     )),
   };
 
-  // Header content with sort functionality
   const fixedHeaderContent = () => {
     return (
       <>
-        {/* First Header Row */}
         <TableRow>
           <TableCell sx={{ width: 300 }}></TableCell>
           <TableCell
@@ -384,7 +425,6 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
           </TableCell>
         </TableRow>
 
-        {/* Second Header Row with sort functionality */}
         <TableRow>
           {columns.map((column, index) => (
             <TableCell
@@ -411,38 +451,31 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
     );
   };
 
-  // Row content
-  const rowContent = (_index: number, row: OverrepResultItem) => {
+  const rowContent = (_index: number, row: OverrepresentationResultItem) => {
     return (
       <>
         {columns.map((column, index) => {
           let content: React.ReactNode = row[column.dataKey];
 
-          // Format numeric values
           if (
             column.dataKey === "expected" ||
             column.dataKey === "foldEnrichment"
           ) {
-            content = (row[column.dataKey] as number).toFixed(2);
+            const value = row[column.dataKey];
+            content = value == null ? "—" : value.toFixed(2);
           } else if (column.dataKey === "pValue" || column.dataKey === "fdr") {
-            content = (row[column.dataKey] as number).toExponential(2);
+            const value = row[column.dataKey];
+            content = value == null ? "—" : value.toExponential(2);
           }
 
-          // Make uploadCount clickable for downloading specific mappings
           if (column.dataKey === "uploadCount") {
             return (
               <TableCell
                 key={column.dataKey}
                 align="center"
                 onClick={() => {
-                  if (
-                    row.mapped_panther_ids &&
-                    row.mapped_panther_ids.length > 0
-                  ) {
-                    handleDownloadCSV(
-                      row.mapped_panther_ids,
-                      `${row.process}_gene_mappings.csv`
-                    );
+                  if (row.mapped_ids && row.mapped_ids.length > 0) {
+                    handleDownloadCSV(`${row.process}_gene_mappings.csv`, row.mapped_ids);
                   }
                 }}
                 sx={{
@@ -508,11 +541,8 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
           <Typography variant="body2" color="text.secondary">
             {Datasets.find((dataset) => dataset.value === annotationDataset)
               ?.name || annotationDataset}
-            {"  a0|  a0"}
-            {correctionType === CorrectionType.BONFERRONI
-              ? "Bonferroni"
-              : "FDR"}{" "}
-            correction
+            {" | "}
+            {correctionLabel} correction
           </Typography>
         </Box>
         <Box>
@@ -525,12 +555,11 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
             Back to input
           </Button>
 
-          {/* Download dropdown button */}
           <Button
             variant="outlined"
             color="primary"
             onClick={handleOpenDownloadMenu}
-            disabled={!response}
+            disabled={!workflowResponse}
             startIcon={<DownloadIcon />}
             endIcon={<KeyboardArrowDownIcon />}
             sx={{ mr: 1 }}
@@ -544,7 +573,16 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
         </Box>
       </Box>
 
-      {/* Replace the prominent advanced options banner with subtle collapsible section */}
+      {downloadMessage && (
+        <Alert
+          severity="info"
+          sx={{ mb: 2 }}
+          onClose={() => setDownloadMessage(null)}
+        >
+          {downloadMessage}
+        </Alert>
+      )}
+
       <Box
         sx={{
           mb: 2,
@@ -602,7 +640,6 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
         )}
       </Box>
 
-      {/* Download options menu */}
       <Menu
         anchorEl={downloadMenuAnchor}
         open={isDownloadMenuOpen}
@@ -613,16 +650,13 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
         </MenuItem>
         <MenuItem onClick={handleDownloadSignificant}>
           <Typography variant="body2">
-            Only Significant Mappings ({filteredData.length}{" "}
-            {datasetTermsPlural})
+            Only Significant Mappings ({significantData.length} {datasetTermsPlural})
           </Typography>
         </MenuItem>
       </Menu>
 
-      {/* Overrepresentation Results Table */}
       {tableData.length > 0 && (
         <Box sx={{ mt: 4 }}>
-          {/* Filter information and toggle */}
           <Box sx={{ display: "flex", alignItems: "center", mb: 2 }}>
             <Typography variant="body2" color="text.secondary" sx={{ mr: 2 }}>
               {showAllResults
@@ -652,13 +686,10 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
               }}
               color="primary"
             >
-              {showAllResults
-                ? "Show Significant Only"
-                : "Click here to show all"}
+              {showAllResults ? "Show Significant Only" : "Click here to show all"}
             </Button>
           </Box>
 
-          {/* Help text for clickable cells */}
           <Box sx={{ display: "flex", alignItems: "center", mb: 1.5 }}>
             <InfoIcon fontSize="small" color="info" sx={{ mr: 1 }} />
             <Typography variant="body2" color="text.secondary">

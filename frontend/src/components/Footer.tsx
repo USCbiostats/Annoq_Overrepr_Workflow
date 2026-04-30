@@ -69,7 +69,10 @@ const Footer: React.FC = () => {
                 <FooterLink to="/about">About</FooterLink>
               </ListItem>
               <ListItem disableGutters>
-                <FooterLink to="/contact">Contact Us</FooterLink>
+                <FooterLink to="/tutorial">Tutorial</FooterLink>
+              </ListItem>
+              <ListItem disableGutters>
+                <FooterLink to="/api">API Guide</FooterLink>
               </ListItem>
               <ListItem disableGutters>
                 <ExternalLink
