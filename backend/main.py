@@ -21,7 +21,6 @@ from src.models import (
 )
 from src.panther import get_panther_info
 from src.query import (
-    ChromosomeQuery,
     GeneQuery,
     IdsQuery,
     InputType,
@@ -74,15 +73,12 @@ async def ga_track_endpoints(request: Request, call_next):
 
 def _resolve_query(
     input_type: InputType,
-    chrQuery: ChromosomeQuery | None,
     rsIdQuery: RsIdQuery | None,
     rsIdListQuery: RsIdListQuery | None,
     idsQuery: IdsQuery | None,
     geneQuery: GeneQuery | None,
     keywordQuery: KeywordQuery | None,
 ) -> Any:
-    if input_type == InputType.chromosome:
-        return chrQuery
     if input_type == InputType.rsId:
         return rsIdQuery
     if input_type == InputType.rsIdList:
@@ -116,7 +112,6 @@ def _validate_panther_gene_limit(gene_list: list[str]) -> None:
 
 async def _run_mapping_pipeline(
     input_type: InputType,
-    chrQuery: ChromosomeQuery | None,
     rsIdQuery: RsIdQuery | None,
     rsIdListQuery: RsIdListQuery | None,
     idsQuery: IdsQuery | None,
@@ -125,7 +120,6 @@ async def _run_mapping_pipeline(
 ) -> tuple[list[str], dict[str, list[str]]]:
     query: Any = _resolve_query(
         input_type,
-        chrQuery,
         rsIdQuery,
         rsIdListQuery,
         idsQuery,
@@ -153,7 +147,6 @@ async def workflow_gene_mappings(
     try:
         all_unique_genes, rs_id_gene_mapping = await _run_mapping_pipeline(
             request.input_type,
-            request.chrQuery,
             request.rsIdQuery,
             request.rsIdListQuery,
             request.idsQuery,
@@ -194,7 +187,6 @@ async def workflow_overrepresentation(
     try:
         all_unique_genes, rs_id_gene_mapping = await _run_mapping_pipeline(
             request.input_type,
-            request.chrQuery,
             request.rsIdQuery,
             request.rsIdListQuery,
             request.idsQuery,

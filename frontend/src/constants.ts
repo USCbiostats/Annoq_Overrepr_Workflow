@@ -1,5 +1,4 @@
 export enum InputTypes {
-    CHROMOSOME =  "chromosome",
     RSIDS = "rsIdList",
     VCF = "vcf"
 }

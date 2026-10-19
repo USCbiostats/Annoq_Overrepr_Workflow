@@ -73,7 +73,7 @@ function Home() {
         setError(
           "We support a maximum of 100,000 unique genes for PANTHER overrepresentation. " +
             `Your input produced ${response.gene_list.length.toLocaleString()} unique genes. ` +
-            "Please narrow the query range and try again."
+            "Please reduce the number of input variants and try again."
         );
         return;
       }
@@ -87,8 +87,6 @@ function Home() {
       const nextResultInputType: InputTypes | null =
         payload?.input_type === "ids"
           ? InputTypes.VCF
-          : payload?.input_type === InputTypes.CHROMOSOME
-          ? InputTypes.CHROMOSOME
           : payload?.input_type === InputTypes.RSIDS
           ? InputTypes.RSIDS
           : null;

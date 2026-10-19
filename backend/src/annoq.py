@@ -8,7 +8,6 @@ import pandas as pd
 from src.config import config
 from src.gene_cols import GENE_COLS
 from src.query import (
-    ChromosomeQuery,
     GeneQuery,
     IdsQuery,
     InputType,
@@ -204,9 +203,7 @@ def get_rsid_gene_mapping(
 
 
 def create_gql_query(input_type: InputType, query: Any) -> Any:
-    if input_type == InputType.chromosome:
-        gql_query = create_chromosome_query(query)
-    elif input_type == InputType.gene:
+    if input_type == InputType.gene:
         gql_query = create_gene_query(query)
     elif input_type == InputType.rsId:
         gql_query = create_rs_id_query(query)
@@ -245,20 +242,6 @@ def generate_gql_download_query(
     }}
     """
     return query_string
-
-
-def create_chromosome_query(query: ChromosomeQuery) -> Any:
-    normalized_chr = str(query.chr).strip()
-    if normalized_chr.lower().startswith("chr"):
-        normalized_chr = normalized_chr[3:]
-
-    filter_fields = {
-        "chr": normalized_chr,
-        "start": query.start,
-        "end": query.end,
-    }
-
-    return generate_gql_download_query("download_SNPs_by_chromosome", filter_fields)
 
 
 def create_gene_query(query: GeneQuery) -> Any:

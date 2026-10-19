@@ -2,7 +2,7 @@
 
 ## 1. What this repository is
 
-SNPWay is a full-stack application that converts variant-oriented input, such as VCF-derived CHROM/POS positions, rsIDs, or chromosome ranges, into gene-level annotations and PANTHER overrepresentation results.
+SNPWay is a full-stack application that converts variant-oriented input, such as VCF-derived CHROM/POS positions or rsIDs, into gene-level annotations and PANTHER overrepresentation results.
 
 The repository contains:
 
@@ -27,7 +27,7 @@ The repository contains:
 - `backend/src/panther.py`: PANTHER gene metadata integration.
 - `backend/src/workflow.py`: PANTHER overrepresentation client and result normalization helpers.
 - `backend/src/models.py`: Pydantic request and response models for the workflow routes.
-- `backend/src/query.py`: Query models for chromosome, rsID, gene, keyword, and VCF-derived input.
+- `backend/src/query.py`: Query models for rsID, gene, keyword, and VCF-derived input.
 
 ### Frontend
 

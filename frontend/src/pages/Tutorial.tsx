@@ -56,9 +56,6 @@ const Tutorial: React.FC = () => {
             <ListItem sx={{ display: "list-item", py: 0.25 }}>
               <Typography variant="body1">rsID list</Typography>
             </ListItem>
-            <ListItem sx={{ display: "list-item", py: 0.25 }}>
-              <Typography variant="body1">Chromosomal region list</Typography>
-            </ListItem>
           </List>
           <Typography variant="body1" sx={{ mt: 1 }}>
             Sample input files are available on the website for testing purposes.
@@ -158,7 +155,7 @@ const Tutorial: React.FC = () => {
             The downloaded file contains four columns:
           </Typography>
           <Typography variant="body1" sx={{ mt: 1 }}>
-            1. Column 1: rsID (rsID/chromosome input) or chr:pos (VCF input)
+            1. Column 1: rsID (rsID input) or chr:pos (VCF input)
           </Typography>
           <Typography variant="body1" sx={{ mt: 1 }}>
             2. Column 2: PANTHER gene ID

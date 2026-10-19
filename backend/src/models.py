@@ -3,7 +3,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from src.query import ChromosomeQuery, GeneQuery, IdsQuery, InputType, KeywordQuery, RsIdListQuery, RsIdQuery
+from src.query import GeneQuery, IdsQuery, InputType, KeywordQuery, RsIdListQuery, RsIdQuery
 
 
 class GeneInfo(BaseModel):
@@ -91,9 +91,6 @@ class WorkflowInputRequest(BaseModel):
     """Shared SNPWay workflow input request model."""
 
     input_type: InputType = Field(..., description="Input mode for the query")
-    chrQuery: ChromosomeQuery | None = Field(
-        default=None, description="Chromosome query payload"
-    )
     rsIdQuery: RsIdQuery | None = Field(default=None, description="Single rsID query")
     rsIdListQuery: RsIdListQuery | None = Field(
         default=None, description="rsID list query payload"

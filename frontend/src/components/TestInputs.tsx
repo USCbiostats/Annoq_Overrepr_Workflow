@@ -42,10 +42,6 @@ const TestInputs: React.FC<TestInputsProps> = ({
 }) => {
   const [inputType, setInputType] = useState(InputTypes.VCF);
 
-  const [chromosome, setChromosome] = useState("");
-  const [startPosition, setStartPosition] = useState("");
-  const [endPosition, setEndPosition] = useState("");
-
   const [rsIds, setRsIds] = useState("");
 
   const [vcfFile, setVcfFile] = useState("");
@@ -123,23 +119,12 @@ const TestInputs: React.FC<TestInputsProps> = ({
   const submitDisabled =
     isLoading ||
     (inputType === InputTypes.VCF && !vcfFile.trim()) ||
-    (inputType === InputTypes.CHROMOSOME &&
-      (!chromosome.trim() || !startPosition.trim() || !endPosition.trim())) ||
     (inputType === InputTypes.RSIDS && !rsIds.trim());
 
   const query_data = () => {
     const data: Record<string, any> = {};
 
-    if (inputType === InputTypes.CHROMOSOME) {
-      data["chr"] = normalizeChromosome(chromosome);
-      data["start"] = startPosition;
-      data["end"] = endPosition;
-
-      return {
-        input_type: inputType,
-        chrQuery: data,
-      };
-    } else if (inputType === InputTypes.VCF) {
+    if (inputType === InputTypes.VCF) {
       const { ids, invalidRows } = parseVcfToIds(vcfFile);
       const uniqueIds = Array.from(new Set(ids));
 
@@ -188,9 +173,6 @@ const TestInputs: React.FC<TestInputsProps> = ({
 
   const handleReset = () => {
     setInputType(InputTypes.VCF);
-    setChromosome("");
-    setStartPosition("");
-    setEndPosition("");
     setRsIds("");
     setVcfFile("");
     setTestType(TestType.FISHER);
@@ -242,10 +224,6 @@ const TestInputs: React.FC<TestInputsProps> = ({
                   onChange={(e) => {
                     if (e.target.value === InputTypes.RSIDS) {
                       setRsIds("");
-                    } else if (e.target.value === InputTypes.CHROMOSOME) {
-                      setChromosome("");
-                      setStartPosition("");
-                      setEndPosition("");
                     } else {
                       setVcfFile("");
                     }
@@ -254,33 +232,11 @@ const TestInputs: React.FC<TestInputsProps> = ({
                   }}
                 >
                   <MenuItem value={InputTypes.VCF}>VCF file</MenuItem>
-                  <MenuItem value={InputTypes.CHROMOSOME}>Chromosome</MenuItem>
                   <MenuItem value={InputTypes.RSIDS}>rsIDs</MenuItem>
                 </Select>
               </FormControl>
 
-              {inputType === InputTypes.CHROMOSOME ? (
-                <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-                  <TextField
-                    label="Chromosome"
-                    value={chromosome}
-                    onChange={(e) => setChromosome(e.target.value)}
-                    fullWidth
-                  />
-                  <TextField
-                    label="Start position"
-                    value={startPosition}
-                    onChange={(e) => setStartPosition(e.target.value)}
-                    fullWidth
-                  />
-                  <TextField
-                    label="End position"
-                    value={endPosition}
-                    onChange={(e) => setEndPosition(e.target.value)}
-                    fullWidth
-                  />
-                </Stack>
-              ) : inputType === InputTypes.VCF ? (
+              {inputType === InputTypes.VCF ? (
                 <Stack spacing={1.5}>
                   <TextField
                     label="VCF file"

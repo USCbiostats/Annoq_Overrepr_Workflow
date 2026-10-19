@@ -3,18 +3,11 @@ from pydantic import BaseModel
 
 
 class InputType(Enum):
-    chromosome = "chromosome"
     gene = "gene"
     rsId = "rsId"
     rsIdList = "rsIdList"
     ids = "ids"
     keyword = "keyword"
-
-
-class ChromosomeQuery(BaseModel):
-    chr: str
-    start: int
-    end: int
 
 
 class RsIdQuery(BaseModel):
