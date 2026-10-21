@@ -1,5 +1,6 @@
 # Create a basic fastapi server
 
+import asyncio
 import warnings
 from typing import Any
 
@@ -14,21 +15,19 @@ from starlette.responses import FileResponse
 from src.analytics import send_event
 from src.annoq import get_annoq_df, get_rsid_gene_mapping
 from src.models import (
+    SnpListInput,
     WorkflowGeneMappingsResponse,
     WorkflowInputRequest,
     WorkflowOverrepresentationRequest,
     WorkflowOverrepresentationResponse,
 )
 from src.panther import get_panther_info
-from src.query import (
-    GeneQuery,
-    IdsQuery,
-    InputType,
-    KeywordQuery,
-    RsIdListQuery,
-    RsIdQuery,
+from src.query import InputType
+from src.workflow import (
+    PantherInputError,
+    get_overrepresentation,
+    parse_overrepresentation_results,
 )
-from src.workflow import get_overrepresentation, parse_overrepresentation_results
 
 
 class NoCacheStaticFiles(StaticFiles):
@@ -71,24 +70,18 @@ async def ga_track_endpoints(request: Request, call_next):
     return response
 
 
-def _resolve_query(
-    input_type: InputType,
-    rsIdQuery: RsIdQuery | None,
-    rsIdListQuery: RsIdListQuery | None,
-    idsQuery: IdsQuery | None,
-    geneQuery: GeneQuery | None,
-    keywordQuery: KeywordQuery | None,
-) -> Any:
+def _resolve_query(snp_list: SnpListInput) -> Any:
+    input_type = snp_list.input_type
     if input_type == InputType.rsId:
-        return rsIdQuery
+        return snp_list.rsIdQuery
     if input_type == InputType.rsIdList:
-        return rsIdListQuery
+        return snp_list.rsIdListQuery
     if input_type == InputType.ids:
-        return idsQuery
+        return snp_list.idsQuery
     if input_type == InputType.gene:
-        return geneQuery
+        return snp_list.geneQuery
     if input_type == InputType.keyword:
-        return keywordQuery
+        return snp_list.keywordQuery
     return None
 
 
@@ -99,44 +92,42 @@ def _build_unique_genes(rs_id_gene_mapping: dict[str, list[str]]) -> list[str]:
     return list(all_unique_genes_set)
 
 
-def _validate_panther_gene_limit(gene_list: list[str]) -> None:
+def _validate_panther_gene_limit(gene_list: list[str], list_label: str) -> None:
     if len(gene_list) > MAX_PANTHER_GENE_COUNT:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=(
-                "Input exceeds PANTHER limit of 100,000 unique genes. "
+                f"{list_label} exceeds PANTHER limit of 100,000 unique genes. "
                 f"Found {len(gene_list)} unique genes."
             ),
         )
 
 
 async def _run_mapping_pipeline(
-    input_type: InputType,
-    rsIdQuery: RsIdQuery | None,
-    rsIdListQuery: RsIdListQuery | None,
-    idsQuery: IdsQuery | None,
-    geneQuery: GeneQuery | None,
-    keywordQuery: KeywordQuery | None,
+    snp_list: SnpListInput,
+    list_label: str = "Input",
 ) -> tuple[list[str], dict[str, list[str]]]:
-    query: Any = _resolve_query(
-        input_type,
-        rsIdQuery,
-        rsIdListQuery,
-        idsQuery,
-        geneQuery,
-        keywordQuery,
-    )
+    query: Any = _resolve_query(snp_list)
+    if query is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"{list_label} payload is missing for input_type "
+                f"'{snp_list.input_type.value}'."
+            ),
+        )
 
-    df = await get_annoq_df(input_type, query)
-    force_chr_pos_keys = input_type == InputType.ids and idsQuery is not None
+    df = await get_annoq_df(snp_list.input_type, query)
+    force_chr_pos_keys = snp_list.input_type == InputType.ids
 
     rs_id_gene_mapping = get_rsid_gene_mapping(
         df,
         force_chr_pos_keys=force_chr_pos_keys,
+        gene_mapping_fields=snp_list.geneMappingFields,
     )
 
     all_unique_genes = _build_unique_genes(rs_id_gene_mapping)
-    _validate_panther_gene_limit(all_unique_genes)
+    _validate_panther_gene_limit(all_unique_genes, list_label)
     return all_unique_genes, rs_id_gene_mapping
 
 
@@ -145,14 +136,7 @@ async def workflow_gene_mappings(
     request: WorkflowInputRequest,
 ) -> WorkflowGeneMappingsResponse:
     try:
-        all_unique_genes, rs_id_gene_mapping = await _run_mapping_pipeline(
-            request.input_type,
-            request.rsIdQuery,
-            request.rsIdListQuery,
-            request.idsQuery,
-            request.geneQuery,
-            request.keywordQuery,
-        )
+        all_unique_genes, rs_id_gene_mapping = await _run_mapping_pipeline(request)
 
         if not all_unique_genes:
             return WorkflowGeneMappingsResponse(
@@ -185,14 +169,22 @@ async def workflow_overrepresentation(
     request: WorkflowOverrepresentationRequest,
 ) -> WorkflowOverrepresentationResponse:
     try:
-        all_unique_genes, rs_id_gene_mapping = await _run_mapping_pipeline(
-            request.input_type,
-            request.rsIdQuery,
-            request.rsIdListQuery,
-            request.idsQuery,
-            request.geneQuery,
-            request.keywordQuery,
-        )
+        reference_gene_list: list[str] | None = None
+        if request.referenceList is None:
+            all_unique_genes, rs_id_gene_mapping = await _run_mapping_pipeline(request)
+        else:
+            (
+                (all_unique_genes, rs_id_gene_mapping),
+                (reference_gene_list, _),
+            ) = await asyncio.gather(
+                _run_mapping_pipeline(request),
+                _run_mapping_pipeline(request.referenceList, "Reference list"),
+            )
+            if not reference_gene_list:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="No genes found for the custom reference list.",
+                )
 
         if all_unique_genes:
             panther_gene_info_data, gene_panther_mapping_data = await get_panther_info(
@@ -203,6 +195,7 @@ async def workflow_overrepresentation(
                 annot_data_set=request.annotDataSet,
                 correction=request.correction.value,
                 enrichment_test_type=request.enrichmentTestType.value,
+                ref_gene_list=reference_gene_list,
             )
         else:
             panther_gene_info_data = {}
@@ -219,9 +212,15 @@ async def workflow_overrepresentation(
             panther_gene_info=panther_gene_info_data,
             gene_panther_mapping=gene_panther_mapping_data,
             overrepresentation_results=overrepresentation_results,
+            reference_gene_list=reference_gene_list,
         )
     except HTTPException:
         raise
+    except PantherInputError as e:
+        # PANTHER rejected the gene lists; pass its message back to the user.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e)
+        )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)

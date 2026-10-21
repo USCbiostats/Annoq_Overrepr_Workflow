@@ -28,6 +28,8 @@ The repository contains:
 - `backend/src/workflow.py`: PANTHER overrepresentation client and result normalization helpers.
 - `backend/src/models.py`: Pydantic request and response models for the workflow routes.
 - `backend/src/query.py`: Query models for rsID, gene, keyword, and VCF-derived input.
+- `backend/src/gene_cols.py`: Selectable AnnoQ gene columns (SNP-to-gene mapping tools) and their gene extractors.
+- `backend/tests/`: pytest suite (`pip install -r requirements-dev.txt`, then `pytest` from `backend/`).
 
 ### Frontend
 
@@ -46,6 +48,12 @@ The backend intentionally keeps the wire payload small. The workflow response co
 - `panther_gene_info`
 - `gene_panther_mapping`
 - `overrepresentation_results`
+- `reference_gene_list` (only when a custom reference list was sent; otherwise `null`)
+
+Optional request fields:
+
+- `geneMappingFields`: AnnoQ gene columns used to map SNPs to genes (`ANNOVAR_ensembl_Gene_ID`, `ANNOVAR_refseq_Gene_ID`, `SnpEff_ensembl_Gene_ID`, `SnpEff_refseq_Gene_ID`, `VEP_ensembl_Gene_ID`, `VEP_refseq_Gene_Name`, `enhancer_linked_genes`). Defaults to all.
+- `referenceList` (`/workflow/overrepresentation` only): a custom reference SNP list with its own `input_type` (`ids` or `rsIdList`), query payload, and `geneMappingFields`. Its genes are sent to PANTHER as `refInputList` with `refOrganism=9606`. When omitted, PANTHER uses all human genes.
 
 The clients compute:
 

@@ -6,7 +6,7 @@ import httpx
 import pandas as pd
 
 from src.config import config
-from src.gene_cols import GENE_COLS
+from src.gene_cols import ALL_GENE_MAPPING_FIELDS, GENE_COLS, GeneMappingField
 from src.query import (
     GeneQuery,
     IdsQuery,
@@ -18,6 +18,11 @@ from src.query import (
 
 DNA_BASES = ("A", "C", "G", "T")
 ANNOQ_IDS_BATCH_SIZE = 50000
+# AnnoQ's gateway gives up after 60 seconds and rejects request bodies over
+# about 1 MB. rsID lookups take about 3.5 ms each, so 5,000 per request
+# finishes in roughly 18 seconds.
+ANNOQ_RSIDS_BATCH_SIZE = 5000
+ANNOQ_TIMEOUT_SECONDS = 60.0
 
 
 def _chunk_items(items: list[str], chunk_size: int) -> list[list[str]]:
@@ -26,18 +31,23 @@ def _chunk_items(items: list[str], chunk_size: int) -> list[list[str]]:
     return [items[i : i + chunk_size] for i in range(0, len(items), chunk_size)]
 
 
-async def _get_annoq_df_for_ids_query(query: IdsQuery) -> pd.DataFrame:
-    expanded_ids = _expand_ids_for_annoq(query.ids)
-    if not expanded_ids:
+async def _get_annoq_df_in_batches(
+    function_name: str,
+    filter_key: str,
+    items: list[str],
+    batch_size: int,
+    batch_label: str,
+) -> pd.DataFrame:
+    if not items:
         return pd.DataFrame()
 
-    id_batches = _chunk_items(expanded_ids, ANNOQ_IDS_BATCH_SIZE)
+    batches = _chunk_items(items, batch_size)
     batch_dfs: list[pd.DataFrame] = []
 
-    for batch_index, batch_ids in enumerate(id_batches, start=1):
+    for batch_index, batch_items in enumerate(batches, start=1):
         gql_query = generate_gql_download_query(
-            "download_SNPs_by_IDs",
-            {"ids": batch_ids},
+            function_name,
+            {filter_key: batch_items},
         )
         try:
             download_url = await get_download_url(gql_query)
@@ -45,8 +55,8 @@ async def _get_annoq_df_for_ids_query(query: IdsQuery) -> pd.DataFrame:
             batch_dfs.append(batch_df)
         except Exception as exc:
             raise Exception(
-                "Failed to retrieve AnnoQ data for ids batch "
-                f"{batch_index}/{len(id_batches)} (size={len(batch_ids)}): {exc}"
+                f"Failed to retrieve AnnoQ data for {batch_label} batch "
+                f"{batch_index}/{len(batches)} (size={len(batch_items)}): {exc}"
             ) from exc
 
     merged_df = pd.concat(batch_dfs, ignore_index=True)
@@ -58,7 +68,27 @@ async def get_annoq_df(input_type: InputType, query: Any) -> pd.DataFrame:
     if input_type == InputType.ids:
         if not isinstance(query, IdsQuery):
             raise ValueError("Ids query payload is missing or invalid")
-        return await _get_annoq_df_for_ids_query(query)
+        return await _get_annoq_df_in_batches(
+            "download_SNPs_by_IDs",
+            "ids",
+            _expand_ids_for_annoq(query.ids),
+            ANNOQ_IDS_BATCH_SIZE,
+            "ids",
+        )
+
+    if input_type == InputType.rsIdList:
+        if not isinstance(query, RsIdListQuery):
+            raise ValueError("rsID list query payload is missing or invalid")
+        unique_rsids = list(
+            dict.fromkeys(rsid.strip() for rsid in query.rsIdList if rsid.strip())
+        )
+        return await _get_annoq_df_in_batches(
+            "download_SNPs_by_RsIDs",
+            "rsIDs",
+            unique_rsids,
+            ANNOQ_RSIDS_BATCH_SIZE,
+            "rsID",
+        )
 
     gql_query = create_gql_query(input_type, query)
     download_url = await get_download_url(gql_query)
@@ -166,7 +196,11 @@ def _expand_ids_for_annoq(raw_ids: list[str]) -> list[str]:
 def get_rsid_gene_mapping(
     annoq_df: pd.DataFrame,
     force_chr_pos_keys: bool = False,
+    gene_mapping_fields: list[GeneMappingField] | None = None,
 ) -> dict[str, list[str]]:
+    selected_fields = (
+        ALL_GENE_MAPPING_FIELDS if gene_mapping_fields is None else gene_mapping_fields
+    )
     gemap: dict[str, list[str]] = {}
     for _, row in annoq_df.iterrows():
         key = ""
@@ -181,8 +215,9 @@ def get_rsid_gene_mapping(
 
         # Get the genes
         genes: list[str] = []
-        for gene_col, gene_extractor in GENE_COLS:
-            single_type_genes = gene_extractor(row[gene_col])
+        for gene_field in selected_fields:
+            gene_extractor = GENE_COLS[gene_field]
+            single_type_genes = gene_extractor(row[gene_field.value])
 
             # Add the genes to the set
             genes.extend(single_type_genes)
@@ -220,7 +255,7 @@ def create_gql_query(input_type: InputType, query: Any) -> Any:
 
 
 def _get_query_fields() -> list[str]:
-    return ["chr", "pos"] + [i[0] for i in (GENE_COLS + [("rs_dbSNP151",)])]
+    return ["chr", "pos"] + [field.value for field in GENE_COLS] + ["rs_dbSNP151"]
 
 
 def generate_gql_download_query(
@@ -274,21 +309,41 @@ def create_keyword_query(query: KeywordQuery) -> Any:
     pass
 
 
+def _describe_annoq_http_error(exc: httpx.HTTPError) -> str:
+    if isinstance(exc, httpx.HTTPStatusError):
+        response = exc.response
+        return f"AnnoQ returned HTTP {response.status_code} {response.reason_phrase}"
+    if isinstance(exc, httpx.TimeoutException):
+        return f"AnnoQ did not respond within {ANNOQ_TIMEOUT_SECONDS:.0f} seconds"
+    return f"Could not reach AnnoQ ({type(exc).__name__}: {exc})"
+
+
 async def get_download_url(gql_query: str) -> str:
     headers = {"Content-Type": "application/json"}
     try:
-        async with httpx.AsyncClient(verify=False, timeout=60.0) as client:
+        async with httpx.AsyncClient(
+            verify=False, timeout=ANNOQ_TIMEOUT_SECONDS
+        ) as client:
             response = await client.post(
                 config.annotation_api_v2,
                 json={"query": gql_query},
                 headers=headers,
             )
             response.raise_for_status()
-            download_url = response.json()["data"]["download"]
-            return f"{config.annotation_download_v2}{download_url}"
     except httpx.HTTPError as e:
         print(f"Error: {e}")
-        raise Exception("Failed to retrieve download URL")
+        raise Exception(
+            f"Failed to retrieve download URL: {_describe_annoq_http_error(e)}"
+        ) from e
+
+    try:
+        download_url = response.json()["data"]["download"]
+    except (ValueError, KeyError, TypeError) as e:
+        raise Exception(
+            "Failed to retrieve download URL: unexpected AnnoQ response "
+            f"{response.text[:200]!r}"
+        ) from e
+    return f"{config.annotation_download_v2}{download_url}"
 
 
 async def download_data(download_url: str) -> pd.DataFrame:
@@ -298,15 +353,23 @@ async def download_data(download_url: str) -> pd.DataFrame:
 
     try:
         # Download file using httpx library
-        async with httpx.AsyncClient(verify=False, timeout=60.0) as client:
+        async with httpx.AsyncClient(
+            verify=False, timeout=ANNOQ_TIMEOUT_SECONDS
+        ) as client:
             response = await client.get(download_url)
             response.raise_for_status()
+    except httpx.HTTPError as e:
+        print(f"Error: {e}")
+        raise Exception(
+            f"Failed to download data: {_describe_annoq_http_error(e)}"
+        ) from e
 
-            # Load the data into a pandas DataFrame
-            # Use the first row as the header
-            # Use tab as the separator
-            buffer = StringIO(response.text)
-            return pd.read_csv(buffer, sep="\t", header=0)
+    try:
+        # Load the data into a pandas DataFrame
+        # Use the first row as the header
+        # Use tab as the separator
+        buffer = StringIO(response.text)
+        return pd.read_csv(buffer, sep="\t", header=0)
     except Exception as e:
         print(f"Error: {e}")
-        raise Exception("Failed to download data")
+        raise Exception(f"Failed to download data: could not parse AnnoQ file ({e})")

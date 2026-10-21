@@ -60,6 +60,29 @@ const Tutorial: React.FC = () => {
           <Typography variant="body1" sx={{ mt: 1 }}>
             Sample input files are available on the website for testing purposes.
           </Typography>
+          <Typography variant="body1" sx={{ mt: 1 }}>
+            By default, SNPs are mapped to genes using all available SNP to gene
+            mapping tools. To choose specific tools, expand "SNP to gene mapping
+            tools for input list" below the input box:
+          </Typography>
+          <List sx={{ listStyleType: "disc", pl: 4 }}>
+            <ListItem sx={{ display: "list-item", py: 0.25 }}>
+              <Typography variant="body1">ANNOVAR (Ensembl and/or RefSeq)</Typography>
+            </ListItem>
+            <ListItem sx={{ display: "list-item", py: 0.25 }}>
+              <Typography variant="body1">SnpEff (Ensembl and/or RefSeq)</Typography>
+            </ListItem>
+            <ListItem sx={{ display: "list-item", py: 0.25 }}>
+              <Typography variant="body1">VEP (Ensembl and/or RefSeq)</Typography>
+            </ListItem>
+            <ListItem sx={{ display: "list-item", py: 0.25 }}>
+              <Typography variant="body1">PEREGRINE enhancer linked genes</Typography>
+            </ListItem>
+          </List>
+          <Typography variant="body1" sx={{ mt: 1 }}>
+            Deselecting both Ensembl and RefSeq for a tool removes that tool. At
+            least one tool must be selected.
+          </Typography>
 
           <Divider sx={{ my: 3 }} />
 
@@ -93,6 +116,14 @@ const Tutorial: React.FC = () => {
           </Typography>
           <Typography variant="body1" sx={{ mt: 1 }}>
             To access additional statistical testing options, click "Show advanced options".
+          </Typography>
+          <Typography variant="body1" sx={{ mt: 1 }}>
+            By default, PANTHER compares your genes against a reference list of all
+            human genes. Under "Show advanced options", select "Use custom reference
+            list" to provide your own background SNPs (for example, all SNPs on your
+            genotyping array) as a VCF file or rsID list. The reference SNPs are
+            mapped to genes using the same tools as the input list unless you
+            uncheck "Same as input list" and choose different tools.
           </Typography>
 
           <Divider sx={{ my: 3 }} />
@@ -161,7 +192,7 @@ const Tutorial: React.FC = () => {
             2. Column 2: PANTHER gene ID
           </Typography>
           <Typography variant="body1" sx={{ mt: 1 }}>
-            3. Column 3: Gene IDs mapped by annotation tools (ANNOVAR, SnpEff, VEP). These IDs are mapped to the PANTHER gene ID (Column 2) using the PANTHER tool.
+            3. Column 3: Gene IDs mapped by the selected SNP to gene mapping tools (ANNOVAR, SnpEff, VEP, PEREGRINE). These IDs are mapped to the PANTHER gene ID (Column 2) using the PANTHER tool.
           </Typography>
           <Typography variant="body1" sx={{ mt: 1 }}>
             4. Column 4: Annotated terms based on the selected dataset

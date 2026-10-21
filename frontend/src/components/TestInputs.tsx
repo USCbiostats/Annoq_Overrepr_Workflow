@@ -3,7 +3,6 @@ import { useState } from "react";
 import {
   Alert,
   Button,
-  TextField,
   Select,
   MenuItem,
   FormControl,
@@ -16,13 +15,31 @@ import {
   Stack,
   Box,
 } from "@mui/material";
-import { CorrectionType, InputTypes, TestType, Datasets } from "../constants";
-import { process_rsids } from "../utils";
-import { UploadFile } from "@mui/icons-material";
+import {
+  ALL_GENE_MAPPING_FIELDS,
+  CorrectionType,
+  GeneMappingField,
+  InputTypes,
+  TestType,
+  Datasets,
+} from "../constants";
+import { buildSnpListPayload } from "../utils";
 import { SAMPLE_VCF_FILE } from "./SampleVCF";
 import { SAMPLE_RSID_LIST } from "./SampleRSIDList";
+import SnpListInputPanel, { SnpListSample } from "./SnpListInputPanel";
+import GeneMappingToolsSelector from "./GeneMappingToolsSelector";
 
 // Use material ui components
+
+// 100K-entry reference samples drawn from HRC r1.1, served from public/samples.
+const SAMPLE_REFERENCE_VCF: SnpListSample = {
+  url: `${import.meta.env.BASE_URL}samples/reference_sample_100K.vcf`,
+  fileName: "reference_sample_100K.vcf",
+};
+const SAMPLE_REFERENCE_RSIDS: SnpListSample = {
+  url: `${import.meta.env.BASE_URL}samples/reference_sample_100K_rsids.txt`,
+  fileName: "reference_sample_100K_rsids.txt",
+};
 
 export type TestInputsProps = {
   onRunTest: (
@@ -41,10 +58,18 @@ const TestInputs: React.FC<TestInputsProps> = ({
   onReset,
 }) => {
   const [inputType, setInputType] = useState(InputTypes.VCF);
+  const [inputText, setInputText] = useState("");
+  const [inputMappingFields, setInputMappingFields] = useState<
+    GeneMappingField[]
+  >(ALL_GENE_MAPPING_FIELDS);
 
-  const [rsIds, setRsIds] = useState("");
-
-  const [vcfFile, setVcfFile] = useState("");
+  const [useCustomReference, setUseCustomReference] = useState(false);
+  const [refInputType, setRefInputType] = useState(InputTypes.VCF);
+  const [refText, setRefText] = useState("");
+  const [refSameAsInput, setRefSameAsInput] = useState(true);
+  const [refMappingFields, setRefMappingFields] = useState<
+    GeneMappingField[]
+  >(ALL_GENE_MAPPING_FIELDS);
 
   const [advancedOptions, setAdvancedOptions] = useState(false);
   const [testType, setTestType] = useState(TestType.FISHER);
@@ -52,113 +77,45 @@ const TestInputs: React.FC<TestInputsProps> = ({
   const [correction, setCorrection] = useState(CorrectionType.FDR);
   const [inputError, setInputError] = useState<string | null>(null);
 
-  const normalizeChromosome = (rawChromosome: string): string => {
-    const trimmed = rawChromosome.trim();
-    if (!trimmed) return "";
-    const withoutPrefix = trimmed.replace(/^chr/i, "");
-    return withoutPrefix;
-  };
-
-  const toChrPosId = (rawChromosome: string, pos: string): string => {
-    const chromosome = normalizeChromosome(rawChromosome);
-    return `${chromosome}:${pos}`;
-  };
-
-  const parseVcfToIds = (
-    rawVcf: string
-  ): { ids: string[]; invalidRows: number } => {
-    const ids: string[] = [];
-    let invalidRows = 0;
-
-    for (const line of rawVcf.split("\n")) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) {
-        continue;
-      }
-
-      // Prefer tab parsing so empty fields are preserved.
-      let chrom = "";
-      let pos = "";
-
-      const tabFields = trimmed.split("\t");
-      if (tabFields.length >= 2) {
-        // VCF columns: CHROM POS ...
-        chrom = tabFields[0];
-        pos = tabFields[1];
-      } else {
-        // Fallback for whitespace-separated rows (tabs replaced by spaces, etc.).
-        const wsFields = trimmed.split(/\s+/);
-        if (wsFields.length >= 2) {
-          // CHROM POS ...
-          chrom = wsFields[0];
-          pos = wsFields[1];
-        } else {
-          invalidRows += 1;
-          continue;
-        }
-      }
-
-      const normalizedChrom = normalizeChromosome(chrom);
-      const normalizedPos = pos.trim();
-
-      if (
-        !normalizedChrom ||
-        !normalizedPos ||
-        !/^\d+$/.test(normalizedPos)
-      ) {
-        invalidRows += 1;
-        continue;
-      }
-
-      ids.push(toChrPosId(normalizedChrom, normalizedPos));
-    }
-
-    return { ids, invalidRows };
-  };
+  const effectiveRefMappingFields = refSameAsInput
+    ? inputMappingFields
+    : refMappingFields;
 
   const submitDisabled =
     isLoading ||
-    (inputType === InputTypes.VCF && !vcfFile.trim()) ||
-    (inputType === InputTypes.RSIDS && !rsIds.trim());
+    !inputText.trim() ||
+    inputMappingFields.length === 0 ||
+    (useCustomReference &&
+      (!refText.trim() || effectiveRefMappingFields.length === 0));
 
   const query_data = () => {
-    const data: Record<string, any> = {};
+    const input = buildSnpListPayload(
+      inputType,
+      inputText,
+      inputMappingFields
+    );
+    const warnings = [input.warning];
 
-    if (inputType === InputTypes.VCF) {
-      const { ids, invalidRows } = parseVcfToIds(vcfFile);
-      const uniqueIds = Array.from(new Set(ids));
-
-      if (uniqueIds.length === 0) {
-        throw new Error(
-          "No valid variants were found in the VCF input. Make sure each row includes CHROM and POS."
-        );
-      }
-
-      if (invalidRows > 0) {
-        setInputError(
-          `Skipped ${invalidRows} invalid VCF row(s). Continue with ${uniqueIds.length} valid position(s).`
-        );
-      }
-
-      data["ids"] = uniqueIds;
-
-      return {
-        input_type: "ids",
-        idsQuery: data,
-      };
-    } else {
-      const parsedRsids = process_rsids(rsIds);
-      if (parsedRsids.length === 0) {
-        throw new Error("No valid rsIDs were found in the input.");
-      }
-
-      data["rsIdList"] = parsedRsids;
-
-      return {
-        input_type: inputType,
-        rsIdListQuery: data,
-      };
+    let referenceList = undefined;
+    if (useCustomReference) {
+      const reference = buildSnpListPayload(
+        refInputType,
+        refText,
+        effectiveRefMappingFields,
+        "reference "
+      );
+      warnings.push(reference.warning);
+      referenceList = reference.payload;
     }
+
+    const warningText = warnings.filter(Boolean).join(" ");
+    if (warningText) {
+      setInputError(warningText);
+    }
+
+    return referenceList
+      ? { ...input.payload, referenceList }
+      : input.payload;
   };
 
   const handleRunTest = () => {
@@ -171,32 +128,29 @@ const TestInputs: React.FC<TestInputsProps> = ({
     }
   };
 
+  const handleRefSameAsInputChange = (checked: boolean) => {
+    if (!checked) {
+      // Start the reference selection from the input list's current selection.
+      setRefMappingFields(inputMappingFields);
+    }
+    setRefSameAsInput(checked);
+  };
+
   const handleReset = () => {
     setInputType(InputTypes.VCF);
-    setRsIds("");
-    setVcfFile("");
+    setInputText("");
+    setInputMappingFields(ALL_GENE_MAPPING_FIELDS);
+    setUseCustomReference(false);
+    setRefInputType(InputTypes.VCF);
+    setRefText("");
+    setRefSameAsInput(true);
+    setRefMappingFields(ALL_GENE_MAPPING_FIELDS);
     setTestType(TestType.FISHER);
     setAnnotDataSet(Datasets[0].value);
     setCorrection(CorrectionType.FDR);
     setAdvancedOptions(false);
     setInputError(null);
     onReset();
-  };
-
-  const readFileEvent = (
-    event: React.ChangeEvent<HTMLInputElement>,
-    callback: (text: string) => void
-  ) => {
-    const reader = new FileReader();
-
-    if (event.target.files && event.target.files.length) {
-      const [file] = event.target.files;
-      reader.readAsText(file);
-
-      reader.onload = () => {
-        callback((reader.result || "").toString());
-      };
-    }
   };
 
   return (
@@ -215,104 +169,24 @@ const TestInputs: React.FC<TestInputsProps> = ({
         <FormGroup>
           <fieldset disabled={isLoading} style={{ border: "none", padding: 0 }}>
             <Stack spacing={3}>
-              <FormControl component="fieldset" disabled={isLoading} fullWidth>
-                <InputLabel id="type-label">Retrieve SNP data by</InputLabel>
-                <Select
-                  labelId="type-label"
-                  label="Retrieve SNP data by"
-                  value={inputType}
-                  onChange={(e) => {
-                    if (e.target.value === InputTypes.RSIDS) {
-                      setRsIds("");
-                    } else {
-                      setVcfFile("");
-                    }
+              <SnpListInputPanel
+                idPrefix="input"
+                selectLabel="Retrieve SNP data by"
+                inputType={inputType}
+                onInputTypeChange={setInputType}
+                text={inputText}
+                onTextChange={setInputText}
+                sampleVcf={SAMPLE_VCF_FILE}
+                sampleRsIds={SAMPLE_RSID_LIST}
+                disabled={isLoading}
+              />
 
-                    setInputType(e.target.value as InputTypes);
-                  }}
-                >
-                  <MenuItem value={InputTypes.VCF}>VCF file</MenuItem>
-                  <MenuItem value={InputTypes.RSIDS}>rsIDs</MenuItem>
-                </Select>
-              </FormControl>
-
-              {inputType === InputTypes.VCF ? (
-                <Stack spacing={1.5}>
-                  <TextField
-                    label="VCF file"
-                    value={vcfFile}
-                    onChange={(e) => setVcfFile(e.target.value)}
-                    multiline
-                    rows={5}
-                    placeholder="Paste VCF content"
-                  />
-                  <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-                    <Button variant="outlined" component="label">
-                      <UploadFile />
-                      Upload VCF file
-                      <input
-                        style={{ display: "none" }}
-                        type="file"
-                        onChange={(event) => {
-                          readFileEvent(event, setVcfFile);
-                        }}
-                      />
-                    </Button>
-                    <Button
-                      variant="outlined"
-                      color="warning"
-                      onClick={() => setVcfFile(SAMPLE_VCF_FILE)}
-                    >
-                      Sample VCF file
-                    </Button>
-                    <Button
-                      variant="outlined"
-                      color="secondary"
-                      onClick={() => setVcfFile("")}
-                    >
-                      Clear
-                    </Button>
-                  </Stack>
-                </Stack>
-              ) : (
-                <Stack spacing={1.5}>
-                  <TextField
-                    label="rsIDs"
-                    value={rsIds}
-                    onChange={(e) => setRsIds(e.target.value)}
-                    multiline
-                    rows={5}
-                    placeholder="Enter rsIDs separated by commas, spaces, or new lines"
-                  />
-                  <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-                    <Button variant="outlined" component="label">
-                      <UploadFile />
-                      Populate from file
-                      <input
-                        style={{ display: "none" }}
-                        type="file"
-                        onChange={(event) => {
-                          readFileEvent(event, setRsIds);
-                        }}
-                      />
-                    </Button>
-                    <Button
-                      variant="outlined"
-                      color="warning"
-                      onClick={() => setRsIds(SAMPLE_RSID_LIST)}
-                    >
-                      Sample rsID list
-                    </Button>
-                    <Button
-                      variant="outlined"
-                      color="secondary"
-                      onClick={() => setRsIds("")}
-                    >
-                      Clear
-                    </Button>
-                  </Stack>
-                </Stack>
-              )}
+              <GeneMappingToolsSelector
+                title="SNP to gene mapping tools for input list"
+                value={inputMappingFields}
+                onChange={setInputMappingFields}
+                disabled={isLoading}
+              />
 
               <Typography
                 variant="subtitle2"
@@ -356,50 +230,111 @@ const TestInputs: React.FC<TestInputsProps> = ({
               />
 
               <Collapse in={advancedOptions}>
-                <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-                  <FormControl
-                    component={"fieldset"}
-                    disabled={isLoading}
-                    fullWidth
-                  >
-                    <InputLabel id="test-type-label">Test type</InputLabel>
-                    <Select
-                      labelId="test-type-label"
-                      label="Test type"
-                      value={testType}
-                      onChange={(e) => setTestType(e.target.value as TestType)}
-                    >
-                      <MenuItem value={TestType.FISHER}>
-                        Fisher’s exact
-                      </MenuItem>
-                      <MenuItem value={TestType.BINOMIAL}>Binomial</MenuItem>
-                    </Select>
-                  </FormControl>
-                  <FormControl
-                    component={"fieldset"}
-                    disabled={isLoading}
-                    fullWidth
-                  >
-                    <InputLabel id="correction-label">Correction</InputLabel>
-                    <Select
-                      labelId="correction-label"
-                      label="Correction"
-                      value={correction}
-                      onChange={(e) =>
-                        setCorrection(e.target.value as CorrectionType)
+                <Stack spacing={3}>
+                  <Box>
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={useCustomReference}
+                          onChange={(e) =>
+                            setUseCustomReference(e.target.checked)
+                          }
+                        />
                       }
+                      label="Use custom reference list"
+                    />
+                    <Typography variant="body2" color="text.secondary">
+                      By default PANTHER uses all human genes as the reference
+                      list. Provide the background SNPs (for example, all
+                      genotyped SNPs) to use their genes instead.
+                    </Typography>
+                  </Box>
+
+                  <Collapse in={useCustomReference} unmountOnExit>
+                    <Box
+                      sx={{
+                        border: "1px solid",
+                        borderColor: "divider",
+                        borderRadius: 1,
+                        p: 2,
+                      }}
                     >
-                      <MenuItem value={CorrectionType.FDR}>
-                        Calculate false discovery rate
-                      </MenuItem>
-                      <MenuItem value={CorrectionType.BONFERRONI}>
-                        Use the Bonferroni correction for multiple testing
-                      </MenuItem>
-                      <MenuItem value={CorrectionType.NONE}>
-                        No correction
-                      </MenuItem>
-                    </Select>
-                  </FormControl>
+                      <Stack spacing={3}>
+                        <Typography variant="subtitle2">
+                          Reference list
+                        </Typography>
+                        <SnpListInputPanel
+                          idPrefix="reference"
+                          selectLabel="Retrieve reference SNP data by"
+                          inputType={refInputType}
+                          onInputTypeChange={setRefInputType}
+                          text={refText}
+                          onTextChange={setRefText}
+                          sampleVcf={SAMPLE_REFERENCE_VCF}
+                          sampleRsIds={SAMPLE_REFERENCE_RSIDS}
+                          disabled={isLoading}
+                        />
+                        <GeneMappingToolsSelector
+                          title="SNP to gene mapping tools for reference list"
+                          value={effectiveRefMappingFields}
+                          onChange={setRefMappingFields}
+                          disabled={isLoading}
+                          sameAsInput={{
+                            checked: refSameAsInput,
+                            onChange: handleRefSameAsInputChange,
+                          }}
+                        />
+                      </Stack>
+                    </Box>
+                  </Collapse>
+
+                  <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+                    <FormControl
+                      component={"fieldset"}
+                      disabled={isLoading}
+                      fullWidth
+                    >
+                      <InputLabel id="test-type-label">Test type</InputLabel>
+                      <Select
+                        labelId="test-type-label"
+                        label="Test type"
+                        value={testType}
+                        onChange={(e) =>
+                          setTestType(e.target.value as TestType)
+                        }
+                      >
+                        <MenuItem value={TestType.FISHER}>
+                          Fisher’s exact
+                        </MenuItem>
+                        <MenuItem value={TestType.BINOMIAL}>Binomial</MenuItem>
+                      </Select>
+                    </FormControl>
+                    <FormControl
+                      component={"fieldset"}
+                      disabled={isLoading}
+                      fullWidth
+                    >
+                      <InputLabel id="correction-label">Correction</InputLabel>
+                      <Select
+                        labelId="correction-label"
+                        label="Correction"
+                        value={correction}
+                        onChange={(e) =>
+                          setCorrection(e.target.value as CorrectionType)
+                        }
+                      >
+                        <MenuItem value={CorrectionType.FDR}>
+                          Calculate false discovery rate
+                        </MenuItem>
+                        <MenuItem value={CorrectionType.BONFERRONI}>
+                          Use the Bonferroni correction for multiple testing
+                        </MenuItem>
+                        <MenuItem value={CorrectionType.NONE}>
+                          No correction
+                        </MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Stack>
                 </Stack>
               </Collapse>
 

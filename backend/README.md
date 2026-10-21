@@ -28,3 +28,12 @@ To run the API, use the following command:
 ```bash
 uvicorn main:app
 ```
+
+## Running the tests
+
+Install the development dependencies and run pytest from the `backend` folder. The tests do not call AnnoQ or PANTHER.
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```

@@ -26,7 +26,13 @@ import {
   OverrepresentationResultItem,
   WorkflowOverrepresentationResponse,
 } from "../models";
-import { CorrectionType, Datasets, InputTypes } from "../constants";
+import {
+  CorrectionType,
+  Datasets,
+  GeneMappingField,
+  InputTypes,
+} from "../constants";
+import { describeGeneMappingFields } from "../utils";
 import { createResultsTableData } from "./utils";
 
 interface ResultDisplayProps {
@@ -36,6 +42,8 @@ interface ResultDisplayProps {
   annotationDataset: string;
   correctionType: CorrectionType;
   inputTypeUsed: InputTypes | null;
+  inputMappingFields: GeneMappingField[];
+  referenceMappingFields: GeneMappingField[] | null;
 }
 
 interface ColumnData {
@@ -75,6 +83,8 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
   resetAnalysis,
   submitToPanther,
   inputTypeUsed,
+  inputMappingFields,
+  referenceMappingFields,
 }) => {
   const [showAllResults, setShowAllResults] = useState(false);
   const [sortBy, setSortBy] = useState<keyof OverrepresentationResultItem>(
@@ -543,6 +553,17 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
               ?.name || annotationDataset}
             {" | "}
             {correctionLabel} correction
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            SNP to gene mapping tools: {describeGeneMappingFields(inputMappingFields)}
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Reference list:{" "}
+            {workflowResponse?.reference_gene_list?.length
+              ? `Custom (${workflowResponse.reference_gene_list.length.toLocaleString()} genes; mapping tools: ${describeGeneMappingFields(
+                  referenceMappingFields ?? []
+                )})`
+              : "All human genes (PANTHER default)"}
           </Typography>
         </Box>
         <Box>

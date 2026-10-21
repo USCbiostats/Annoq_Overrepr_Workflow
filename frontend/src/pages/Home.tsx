@@ -16,7 +16,13 @@ import {
   Stack,
   Button,
 } from "@mui/material";
-import { CorrectionType, InputTypes, TestType } from "../constants";
+import {
+  ALL_GENE_MAPPING_FIELDS,
+  CorrectionType,
+  GeneMappingField,
+  InputTypes,
+  TestType,
+} from "../constants";
 import {
   runWorkflowOverrepresentation,
   MAX_OVERREP_GENE_COUNT,
@@ -40,6 +46,10 @@ function Home() {
   });
   const [resultInputType, setResultInputType] =
     useState<InputTypes | null>(null);
+  const [resultMappingFields, setResultMappingFields] = useState({
+    input: ALL_GENE_MAPPING_FIELDS,
+    reference: null as GeneMappingField[] | null,
+  });
 
   const onRunTest = async (
     payload: any,
@@ -92,6 +102,10 @@ function Home() {
           : null;
 
       setResultInputType(nextResultInputType);
+      setResultMappingFields({
+        input: payload?.geneMappingFields ?? ALL_GENE_MAPPING_FIELDS,
+        reference: payload?.referenceList?.geneMappingFields ?? null,
+      });
 
       setCurrentStage(2);
       setSuccess(true);
@@ -110,7 +124,7 @@ function Home() {
 
     const form = document.createElement("form");
     form.method = "POST";
-    form.action = "https://pantherdb.org/services/oai/pantherdb/enrich/overrep";
+    form.action = "/services/oai/pantherdb/enrich/overrep"; //"https://pantherdb.org/services/oai/pantherdb/enrich/overrep";
     form.target = "_blank";
 
     const correctionField = document.createElement("input");
@@ -155,6 +169,22 @@ function Home() {
     form.appendChild(formatField);
     form.appendChild(resourceField);
     form.appendChild(inputField);
+
+    // Keep PANTHER's page consistent with SNPWay when a custom reference was used.
+    if (workflowResponse.reference_gene_list?.length) {
+      const refInputField = document.createElement("input");
+      refInputField.type = "hidden";
+      refInputField.name = "refInputList";
+      refInputField.value = workflowResponse.reference_gene_list.join(",");
+
+      const refOrganismField = document.createElement("input");
+      refOrganismField.type = "hidden";
+      refOrganismField.name = "refOrganism";
+      refOrganismField.value = "9606";
+
+      form.appendChild(refInputField);
+      form.appendChild(refOrganismField);
+    }
 
     document.body.appendChild(form);
     form.submit();
@@ -308,6 +338,8 @@ function Home() {
             annotationDataset={pantherId.dataset}
             correctionType={pantherId.correction}
             inputTypeUsed={resultInputType}
+            inputMappingFields={resultMappingFields.input}
+            referenceMappingFields={resultMappingFields.reference}
           />
         )}
 

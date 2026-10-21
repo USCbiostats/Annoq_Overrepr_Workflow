@@ -1,8 +1,9 @@
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
+from src.gene_cols import ALL_GENE_MAPPING_FIELDS, GeneMappingField
 from src.query import GeneQuery, IdsQuery, InputType, KeywordQuery, RsIdListQuery, RsIdQuery
 
 
@@ -87,8 +88,8 @@ class OverrepresentationTestType(str, Enum):
     BINOMIAL = "BINOMIAL"
 
 
-class WorkflowInputRequest(BaseModel):
-    """Shared SNPWay workflow input request model."""
+class SnpListInput(BaseModel):
+    """A list of SNPs plus the AnnoQ gene columns used to map them to genes."""
 
     input_type: InputType = Field(..., description="Input mode for the query")
     rsIdQuery: RsIdQuery | None = Field(default=None, description="Single rsID query")
@@ -105,6 +106,36 @@ class WorkflowInputRequest(BaseModel):
     keywordQuery: KeywordQuery | None = Field(
         default=None, description="Keyword query payload"
     )
+    geneMappingFields: list[GeneMappingField] = Field(
+        default_factory=lambda: list(ALL_GENE_MAPPING_FIELDS),
+        min_length=1,
+        description=(
+            "AnnoQ gene columns (SNP-to-gene mapping tools) used to map SNPs to "
+            "genes. Defaults to all available columns."
+        ),
+    )
+
+    @field_validator("geneMappingFields")
+    @classmethod
+    def _dedupe_gene_mapping_fields(
+        cls, fields: list[GeneMappingField]
+    ) -> list[GeneMappingField]:
+        return list(dict.fromkeys(fields))
+
+
+class WorkflowInputRequest(SnpListInput):
+    """Shared SNPWay workflow input request model."""
+
+
+class ReferenceListInput(SnpListInput):
+    """Custom reference SNP list used in place of PANTHER's all-genes reference."""
+
+    @field_validator("input_type")
+    @classmethod
+    def _validate_reference_input_type(cls, input_type: InputType) -> InputType:
+        if input_type not in (InputType.ids, InputType.rsIdList):
+            raise ValueError("Reference list input_type must be 'ids' or 'rsIdList'")
+        return input_type
 
 
 class WorkflowGeneMappingsResponse(GeneMappingsResponse):
@@ -147,6 +178,13 @@ class WorkflowOverrepresentationRequest(WorkflowInputRequest):
         default=OverrepresentationTestType.FISHER,
         description="PANTHER enrichment test type",
     )
+    referenceList: ReferenceListInput | None = Field(
+        default=None,
+        description=(
+            "Optional custom reference SNP list. When omitted, PANTHER uses all "
+            "human genes as the reference."
+        ),
+    )
 
 
 class WorkflowOverrepresentationResponse(WorkflowGeneMappingsResponse):
@@ -155,4 +193,11 @@ class WorkflowOverrepresentationResponse(WorkflowGeneMappingsResponse):
     overrepresentation_results: list[OverrepresentationResultItem] = Field(
         ...,
         description="Normalized overrepresentation result terms.",
+    )
+    reference_gene_list: list[str] | None = Field(
+        default=None,
+        description=(
+            "Genes mapped from the custom reference list, or null when the "
+            "default PANTHER reference (all human genes) was used."
+        ),
     )

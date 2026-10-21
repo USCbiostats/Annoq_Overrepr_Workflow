@@ -42,4 +42,5 @@ export type WorkflowGeneMappingsResponse = GeneMappingDownloadData;
 
 export type WorkflowOverrepresentationResponse = GeneMappingDownloadData & {
     overrepresentation_results: OverrepresentationResultItem[];
+    reference_gene_list?: string[] | null; // Genes from the custom reference list; null when PANTHER's default reference was used
 }
