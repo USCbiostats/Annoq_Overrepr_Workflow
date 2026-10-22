@@ -5,6 +5,18 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+DEFAULT_PORT = 8002
+
+
+def _read_port() -> int:
+    raw_port = os.environ.get("PORT", "").strip()
+    if not raw_port:
+        return DEFAULT_PORT
+    try:
+        return int(raw_port)
+    except ValueError:
+        raise ValueError(f"PORT must be a number, got {raw_port!r}") from None
+
 
 @dataclass(frozen=True)
 class Config:
@@ -12,6 +24,8 @@ class Config:
     annotation_download_v2: str
     ga_measurement_id: str
     ga_api_secret: str
+    # Port used by `python main.py`; `uvicorn ... --port` overrides it.
+    port: int
 
 
 config = Config(
@@ -19,4 +33,5 @@ config = Config(
     annotation_download_v2=os.environ["ANNOTATION_DOWNLOAD_V2"],
     ga_measurement_id=os.environ["GA_MEASUREMENT_ID"],
     ga_api_secret=os.environ["GA_API_SECRET"],
+    port=_read_port(),
 )

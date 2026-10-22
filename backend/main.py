@@ -15,6 +15,7 @@ from starlette.responses import FileResponse
 
 from src.analytics import send_event
 from src.annoq import get_annoq_df, get_rsid_gene_mapping
+from src.config import config
 from src.models import (
     OverrepresentationResultItem,
     PantherGeneInfoResponse,
@@ -476,3 +477,10 @@ async def workflow_overrepresentation_stream(
 
 # Add the build folder that contains the react app
 app.mount("/", NoCacheStaticFiles(directory="dist", html=True))
+
+
+if __name__ == "__main__":
+    # `python main.py` serves the API and the built frontend on PORT from .env.
+    import uvicorn
+
+    uvicorn.run(app, port=config.port)
