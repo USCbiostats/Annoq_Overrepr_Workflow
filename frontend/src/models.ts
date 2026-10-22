@@ -44,3 +44,43 @@ export type WorkflowOverrepresentationResponse = GeneMappingDownloadData & {
     overrepresentation_results: OverrepresentationResultItem[];
     reference_gene_list?: string[] | null; // Genes from the custom reference list; null when PANTHER's default reference was used
 }
+
+// Progress events from POST /workflow/overrepresentation/stream.
+export type WorkflowStageName =
+    | "input"
+    | "reference"
+    | "overrepresentation"
+    | "gene_details";
+
+export type WorkflowStageStatus = "pending" | "running" | "done" | "failed";
+
+export type WorkflowStageEvent = {
+    event: "stage";
+    stage: WorkflowStageName;
+    status: WorkflowStageStatus;
+    done: number | null; // Batches finished, when the stage reports batches
+    total: number | null;
+}
+
+export type WorkflowErrorEvent = {
+    event: "error";
+    stage: WorkflowStageName | null;
+    status: number; // HTTP status
+    detail: string;
+}
+
+export type WorkflowStreamEvent =
+    | WorkflowStageEvent
+    | { event: "result"; data: WorkflowOverrepresentationResponse }
+    | { event: "gene_details"; data: PantherGeneInfoResponse }
+    | WorkflowErrorEvent
+    | { event: "heartbeat" };
+
+// Client-side view of one stage, built from its stage events.
+export type WorkflowStageProgress = {
+    status: WorkflowStageStatus;
+    done: number | null;
+    total: number | null;
+    startedAt: number | null; // ms timestamps
+    finishedAt: number | null;
+}

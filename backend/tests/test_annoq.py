@@ -61,8 +61,26 @@ def test_ids_query_still_uses_ids_batches(captured_batches):
     asyncio.run(annoq.get_annoq_df(InputType.ids, IdsQuery(ids=["1:100"])))
 
     assert captured_batches[0]["key"] == "ids"
-    # Each chr:pos expands to 16 REF>ALT variant IDs.
-    assert len(captured_batches[0]["values"]) == 16
+    # Each chr:pos expands to the 12 possible substitutions.
+    values = captured_batches[0]["values"]
+    assert len(values) == 12
+    assert "1:100A>C" in values
+    assert not any(v[-3] == v[-1] for v in values)  # no A>A, C>C, ...
+
+
+def test_ids_with_alleles_are_sent_as_is(captured_batches):
+    asyncio.run(
+        annoq.get_annoq_df(
+            InputType.ids,
+            IdsQuery(ids=["1:100A>C", "1:100A>G", "2:200", "1:100A>C"]),
+        )
+    )
+
+    values = captured_batches[0]["values"]
+    # The two given variants once each, then 12 candidates for 2:200.
+    assert values[:2] == ["1:100A>C", "1:100A>G"]
+    assert len(values) == 2 + 12
+    assert all(v.startswith("2:200") for v in values[2:])
 
 
 def test_batch_failure_names_the_batch(monkeypatch):
@@ -121,7 +139,7 @@ def test_get_download_url_reports_annoq_status(monkeypatch):
 def test_get_download_url_reports_timeout(monkeypatch):
     _fake_annoq_client(monkeypatch, httpx.ReadTimeout("timed out"))
 
-    with pytest.raises(Exception, match="AnnoQ did not respond within 60 seconds"):
+    with pytest.raises(Exception, match="AnnoQ did not respond within 300 seconds"):
         asyncio.run(annoq.get_download_url("query {}"))
 
 

@@ -12,17 +12,27 @@ The repository contains:
 ## 2. Runtime flow
 
 1. The user chooses an input mode in the frontend and submits an analysis.
-2. The frontend sends the request to `POST /workflow/gene_mappings` or `POST /workflow/overrepresentation`.
-3. The backend maps SNP input to genes via AnnoQ and enforces the 100,000 unique-gene limit used by PANTHER.
-4. The backend fetches PANTHER gene metadata and runs overrepresentation analysis.
-5. The backend returns a compact response containing `gene_list`, `rsId_genes_map`, `panther_gene_info`, `gene_panther_mapping`, and `overrepresentation_results`.
+2. The frontend sends the request to `POST /workflow/overrepresentation/stream`. API clients use `POST /workflow/gene_mappings` or `POST /workflow/overrepresentation`.
+3. The backend maps SNP input (and an optional custom reference list, at the same time) to genes via AnnoQ in batches and enforces the 100,000 unique-gene limit used by PANTHER.
+4. The backend runs the PANTHER overrepresentation test, then fetches PANTHER gene metadata, which is only needed for downloads.
+5. The backend returns a compact response containing `gene_list`, `rsId_genes_map`, `panther_gene_info`, `gene_panther_mapping`, `overrepresentation_results` and `reference_gene_list`.
 6. The frontend, annoq-py, and AnnoQR derive significant rows and CSV tables locally from that compact response.
+
+### Streaming endpoint
+
+`POST /workflow/overrepresentation/stream` takes the same body as `/workflow/overrepresentation` and returns newline-delimited JSON events:
+
+- `stage`: progress for `input`, `reference`, `overrepresentation` and `gene_details`, with `status` (`pending`, `running`, `done`, `failed`) and batch counts `done`/`total` where available.
+- `result`: the response as soon as the overrepresentation test finishes, with empty `panther_gene_info` and `gene_panther_mapping`. The frontend shows results at this point.
+- `gene_details`: `panther_gene_info` and `gene_panther_mapping`. The frontend enables downloads when this arrives.
+- `error`: `stage`, HTTP `status` and `detail`. Before `result` the run has stopped; after it, only downloads are affected.
+- `heartbeat`: sent every 15 seconds while nothing else happens.
 
 ## 3. Main components
 
 ### Backend
 
-- `backend/main.py`: FastAPI entrypoint with the two workflow routes and static frontend hosting.
+- `backend/main.py`: FastAPI entrypoint with the workflow routes (including the streaming route) and static frontend hosting.
 - `backend/src/annoq.py`: AnnoQ integration and SNP-to-gene mapping helpers.
 - `backend/src/panther.py`: PANTHER gene metadata integration.
 - `backend/src/workflow.py`: PANTHER overrepresentation client and result normalization helpers.

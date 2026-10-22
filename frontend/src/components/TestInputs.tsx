@@ -11,6 +11,7 @@ import {
   FormControlLabel,
   Checkbox,
   Collapse,
+  Divider,
   Typography,
   Stack,
   Box,
@@ -30,6 +31,36 @@ import SnpListInputPanel, { SnpListSample } from "./SnpListInputPanel";
 import GeneMappingToolsSelector from "./GeneMappingToolsSelector";
 
 // Use material ui components
+
+type FormSectionProps = {
+  number: number;
+  title: string;
+  description?: string;
+  children: React.ReactNode;
+};
+
+// A numbered, outlined block that groups related form controls.
+const FormSection: React.FC<FormSectionProps> = ({
+  number,
+  title,
+  description,
+  children,
+}) => (
+  <Box
+    component="section"
+    sx={{ border: "1px solid", borderColor: "divider", borderRadius: 1, p: 2.5 }}
+  >
+    <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+      {number}. {title}
+    </Typography>
+    {description && (
+      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+        {description}
+      </Typography>
+    )}
+    <Box sx={{ mt: 2 }}>{children}</Box>
+  </Box>
+);
 
 // 100K-entry reference samples drawn from HRC r1.1, served from public/samples.
 const SAMPLE_REFERENCE_VCF: SnpListSample = {
@@ -169,33 +200,25 @@ const TestInputs: React.FC<TestInputsProps> = ({
         <FormGroup>
           <fieldset disabled={isLoading} style={{ border: "none", padding: 0 }}>
             <Stack spacing={3}>
-              <SnpListInputPanel
-                idPrefix="input"
-                selectLabel="Retrieve SNP data by"
-                inputType={inputType}
-                onInputTypeChange={setInputType}
-                text={inputText}
-                onTextChange={setInputText}
-                sampleVcf={SAMPLE_VCF_FILE}
-                sampleRsIds={SAMPLE_RSID_LIST}
-                disabled={isLoading}
-              />
+              <FormSection number={1} title="Input list">
+                <SnpListInputPanel
+                  idPrefix="input"
+                  selectLabel="Retrieve SNP data by"
+                  inputType={inputType}
+                  onInputTypeChange={setInputType}
+                  text={inputText}
+                  onTextChange={setInputText}
+                  sampleVcf={SAMPLE_VCF_FILE}
+                  sampleRsIds={SAMPLE_RSID_LIST}
+                  disabled={isLoading}
+                />
+              </FormSection>
 
-              <GeneMappingToolsSelector
-                title="SNP to gene mapping tools for input list"
-                value={inputMappingFields}
-                onChange={setInputMappingFields}
-                disabled={isLoading}
-              />
-
-              <Typography
-                variant="subtitle2"
-                color="text.secondary"
-                sx={{ mt: 0.5 }}
+              <FormSection
+                number={2}
+                title="Annotation data set"
+                description="Select an annotation dataset to analyze."
               >
-                Select an annotation dataset to analyze.
-              </Typography>
-              <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
                 <FormControl
                   component={"fieldset"}
                   disabled={isLoading}
@@ -217,7 +240,7 @@ const TestInputs: React.FC<TestInputsProps> = ({
                     ))}
                   </Select>
                 </FormControl>
-              </Stack>
+              </FormSection>
 
               <FormControlLabel
                 control={
@@ -231,7 +254,25 @@ const TestInputs: React.FC<TestInputsProps> = ({
 
               <Collapse in={advancedOptions}>
                 <Stack spacing={3}>
-                  <Box>
+                  <FormSection
+                    number={3}
+                    title="SNP to gene mapping annotation tools for input list"
+                    description="Choose which annotation tools are used to map the input SNPs to genes."
+                  >
+                    <GeneMappingToolsSelector
+                      title="Selected"
+                      value={inputMappingFields}
+                      onChange={setInputMappingFields}
+                      disabled={isLoading}
+                      collapsible={false}
+                    />
+                  </FormSection>
+
+                  <FormSection
+                    number={4}
+                    title="Reference list"
+                    description="By default PANTHER uses all human genes as the reference list. Provide the background SNPs (for example, all genotyped SNPs) to use their genes instead."
+                  >
                     <FormControlLabel
                       control={
                         <Checkbox
@@ -243,26 +284,9 @@ const TestInputs: React.FC<TestInputsProps> = ({
                       }
                       label="Use custom reference list"
                     />
-                    <Typography variant="body2" color="text.secondary">
-                      By default PANTHER uses all human genes as the reference
-                      list. Provide the background SNPs (for example, all
-                      genotyped SNPs) to use their genes instead.
-                    </Typography>
-                  </Box>
 
-                  <Collapse in={useCustomReference} unmountOnExit>
-                    <Box
-                      sx={{
-                        border: "1px solid",
-                        borderColor: "divider",
-                        borderRadius: 1,
-                        p: 2,
-                      }}
-                    >
-                      <Stack spacing={3}>
-                        <Typography variant="subtitle2">
-                          Reference list
-                        </Typography>
+                    <Collapse in={useCustomReference} unmountOnExit>
+                      <Stack spacing={3} sx={{ mt: 2 }}>
                         <SnpListInputPanel
                           idPrefix="reference"
                           selectLabel="Retrieve reference SNP data by"
@@ -274,67 +298,71 @@ const TestInputs: React.FC<TestInputsProps> = ({
                           sampleRsIds={SAMPLE_REFERENCE_RSIDS}
                           disabled={isLoading}
                         />
+                        <Divider />
                         <GeneMappingToolsSelector
-                          title="SNP to gene mapping tools for reference list"
+                          title="SNP to gene mapping annotation tools for reference list"
                           value={effectiveRefMappingFields}
                           onChange={setRefMappingFields}
                           disabled={isLoading}
+                          collapsible={false}
                           sameAsInput={{
                             checked: refSameAsInput,
                             onChange: handleRefSameAsInputChange,
                           }}
                         />
                       </Stack>
-                    </Box>
-                  </Collapse>
+                    </Collapse>
+                  </FormSection>
 
-                  <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-                    <FormControl
-                      component={"fieldset"}
-                      disabled={isLoading}
-                      fullWidth
-                    >
-                      <InputLabel id="test-type-label">Test type</InputLabel>
-                      <Select
-                        labelId="test-type-label"
-                        label="Test type"
-                        value={testType}
-                        onChange={(e) =>
-                          setTestType(e.target.value as TestType)
-                        }
+                  <FormSection number={5} title="Statistical test">
+                    <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+                      <FormControl
+                        component={"fieldset"}
+                        disabled={isLoading}
+                        fullWidth
                       >
-                        <MenuItem value={TestType.FISHER}>
-                          Fisher’s exact
-                        </MenuItem>
-                        <MenuItem value={TestType.BINOMIAL}>Binomial</MenuItem>
-                      </Select>
-                    </FormControl>
-                    <FormControl
-                      component={"fieldset"}
-                      disabled={isLoading}
-                      fullWidth
-                    >
-                      <InputLabel id="correction-label">Correction</InputLabel>
-                      <Select
-                        labelId="correction-label"
-                        label="Correction"
-                        value={correction}
-                        onChange={(e) =>
-                          setCorrection(e.target.value as CorrectionType)
-                        }
+                        <InputLabel id="test-type-label">Test type</InputLabel>
+                        <Select
+                          labelId="test-type-label"
+                          label="Test type"
+                          value={testType}
+                          onChange={(e) =>
+                            setTestType(e.target.value as TestType)
+                          }
+                        >
+                          <MenuItem value={TestType.FISHER}>
+                            Fisher’s exact
+                          </MenuItem>
+                          <MenuItem value={TestType.BINOMIAL}>Binomial</MenuItem>
+                        </Select>
+                      </FormControl>
+                      <FormControl
+                        component={"fieldset"}
+                        disabled={isLoading}
+                        fullWidth
                       >
-                        <MenuItem value={CorrectionType.FDR}>
-                          Calculate false discovery rate
-                        </MenuItem>
-                        <MenuItem value={CorrectionType.BONFERRONI}>
-                          Use the Bonferroni correction for multiple testing
-                        </MenuItem>
-                        <MenuItem value={CorrectionType.NONE}>
-                          No correction
-                        </MenuItem>
-                      </Select>
-                    </FormControl>
-                  </Stack>
+                        <InputLabel id="correction-label">Correction</InputLabel>
+                        <Select
+                          labelId="correction-label"
+                          label="Correction"
+                          value={correction}
+                          onChange={(e) =>
+                            setCorrection(e.target.value as CorrectionType)
+                          }
+                        >
+                          <MenuItem value={CorrectionType.FDR}>
+                            Calculate false discovery rate
+                          </MenuItem>
+                          <MenuItem value={CorrectionType.BONFERRONI}>
+                            Use the Bonferroni correction for multiple testing
+                          </MenuItem>
+                          <MenuItem value={CorrectionType.NONE}>
+                            No correction
+                          </MenuItem>
+                        </Select>
+                      </FormControl>
+                    </Stack>
+                  </FormSection>
                 </Stack>
               </Collapse>
 

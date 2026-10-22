@@ -7,6 +7,7 @@ import pandas as pd
 
 from src.config import config
 from src.gene_cols import ALL_GENE_MAPPING_FIELDS, GENE_COLS, GeneMappingField
+from src.progress import ProgressCallback, report_progress
 from src.query import (
     GeneQuery,
     IdsQuery,
@@ -22,7 +23,8 @@ ANNOQ_IDS_BATCH_SIZE = 50000
 # about 1 MB. rsID lookups take about 3.5 ms each, so 5,000 per request
 # finishes in roughly 18 seconds.
 ANNOQ_RSIDS_BATCH_SIZE = 5000
-ANNOQ_TIMEOUT_SECONDS = 60.0
+# How long SNPWay waits for each AnnoQ request (download URL and file download).
+ANNOQ_TIMEOUT_SECONDS = 300.0
 
 
 def _chunk_items(items: list[str], chunk_size: int) -> list[list[str]]:
@@ -37,12 +39,15 @@ async def _get_annoq_df_in_batches(
     items: list[str],
     batch_size: int,
     batch_label: str,
+    on_progress: ProgressCallback | None = None,
 ) -> pd.DataFrame:
     if not items:
+        report_progress(on_progress, 0, 0)
         return pd.DataFrame()
 
     batches = _chunk_items(items, batch_size)
     batch_dfs: list[pd.DataFrame] = []
+    report_progress(on_progress, 0, len(batches))
 
     for batch_index, batch_items in enumerate(batches, start=1):
         gql_query = generate_gql_download_query(
@@ -58,13 +63,18 @@ async def _get_annoq_df_in_batches(
                 f"Failed to retrieve AnnoQ data for {batch_label} batch "
                 f"{batch_index}/{len(batches)} (size={len(batch_items)}): {exc}"
             ) from exc
+        report_progress(on_progress, batch_index, len(batches))
 
     merged_df = pd.concat(batch_dfs, ignore_index=True)
     merged_df.replace(".", "", inplace=True)
     return merged_df
 
 
-async def get_annoq_df(input_type: InputType, query: Any) -> pd.DataFrame:
+async def get_annoq_df(
+    input_type: InputType,
+    query: Any,
+    on_progress: ProgressCallback | None = None,
+) -> pd.DataFrame:
     if input_type == InputType.ids:
         if not isinstance(query, IdsQuery):
             raise ValueError("Ids query payload is missing or invalid")
@@ -74,6 +84,7 @@ async def get_annoq_df(input_type: InputType, query: Any) -> pd.DataFrame:
             _expand_ids_for_annoq(query.ids),
             ANNOQ_IDS_BATCH_SIZE,
             "ids",
+            on_progress,
         )
 
     if input_type == InputType.rsIdList:
@@ -88,11 +99,14 @@ async def get_annoq_df(input_type: InputType, query: Any) -> pd.DataFrame:
             unique_rsids,
             ANNOQ_RSIDS_BATCH_SIZE,
             "rsID",
+            on_progress,
         )
 
+    report_progress(on_progress, 0, 1)
     gql_query = create_gql_query(input_type, query)
     download_url = await get_download_url(gql_query)
     df = await download_data(download_url)
+    report_progress(on_progress, 1, 1)
 
     # Empty cells in the df have the string "."
     # Replace them with the empty string
@@ -166,8 +180,12 @@ def _chr_pos_to_annoq_variant_ids(chr_pos_id: str) -> list[str]:
     # AnnoQ IDs use chromosome without the "chr" prefix.
     annoq_chr = normalized_chr[3:]
 
+    # Every possible substitution at this position (ref == alt is not a variant).
     return [
-        f"{annoq_chr}:{position}{ref}>{alt}" for ref in DNA_BASES for alt in DNA_BASES
+        f"{annoq_chr}:{position}{ref}>{alt}"
+        for ref in DNA_BASES
+        for alt in DNA_BASES
+        if ref != alt
     ]
 
 

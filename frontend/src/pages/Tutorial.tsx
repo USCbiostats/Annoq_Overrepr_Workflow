@@ -62,8 +62,8 @@ const Tutorial: React.FC = () => {
           </Typography>
           <Typography variant="body1" sx={{ mt: 1 }}>
             By default, SNPs are mapped to genes using all available SNP to gene
-            mapping tools. To choose specific tools, expand "SNP to gene mapping
-            tools for input list" below the input box:
+            mapping tools. To choose specific tools, click "Show advanced options"
+            and use section 3, "SNP to gene mapping annotation tools for input list":
           </Typography>
           <List sx={{ listStyleType: "disc", pl: 4 }}>
             <ListItem sx={{ display: "list-item", py: 0.25 }}>
@@ -192,7 +192,7 @@ const Tutorial: React.FC = () => {
             2. Column 2: PANTHER gene ID
           </Typography>
           <Typography variant="body1" sx={{ mt: 1 }}>
-            3. Column 3: Gene IDs mapped by the selected SNP to gene mapping tools (ANNOVAR, SnpEff, VEP, PEREGRINE). These IDs are mapped to the PANTHER gene ID (Column 2) using the PANTHER tool.
+            3. Column 3: Gene IDs mapped by the selected SNP to gene mapping annotation tools (ANNOVAR, SnpEff, VEP, PEREGRINE). These IDs are mapped to the PANTHER gene ID (Column 2) using the PANTHER tool.
           </Typography>
           <Typography variant="body1" sx={{ mt: 1 }}>
             4. Column 4: Annotated terms based on the selected dataset

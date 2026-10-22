@@ -3,18 +3,22 @@ from typing import Tuple
 import httpx
 
 from src.models import GeneInfo
+from src.progress import ProgressCallback, report_progress
 
-PANTHER_GENEINFO_BATCH_SIZE = 1000
+# PANTHER's geneinfo service accepts up to 5,000 IDs per request.
+PANTHER_GENEINFO_BATCH_SIZE = 5000
 
 
 async def get_panther_info(
     gene_list: list[str],
+    on_progress: ProgressCallback | None = None,
 ) -> Tuple[dict[str, GeneInfo], dict[str, list[str]]]:
     """
     Get PANTHER information for a list of genes.
 
     Args:
         gene_list: List of genes to get information for.
+        on_progress: Optional callback called as (batches done, total batches).
 
     Returns:
         A tuple of (panther_gene_info, gene_panther_mapping).
@@ -22,6 +26,8 @@ async def get_panther_info(
     panther_gene_info: dict[str, GeneInfo] = {}
     gene_panther_mapping: dict[str, list[str]] = {}
 
+    total_batches = -(-len(gene_list) // PANTHER_GENEINFO_BATCH_SIZE)
+    report_progress(on_progress, 0, total_batches)
     if not gene_list:
         return panther_gene_info, gene_panther_mapping
 
@@ -49,6 +55,7 @@ async def get_panther_info(
                 panther_gene_info=panther_gene_info,
                 gene_panther_mapping=gene_panther_mapping,
             )
+            report_progress(on_progress, batch_index, total_batches)
 
     return panther_gene_info, gene_panther_mapping
 

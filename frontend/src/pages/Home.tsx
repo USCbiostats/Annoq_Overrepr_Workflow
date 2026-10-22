@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import TestInputs from "../components/TestInputs";
 import TopBar from "../components/TopBar";
 import BrandHeader from "../components/BrandHeader";
+import ProgressPanel from "../components/ProgressPanel";
 import Alert from "@mui/material/Alert";
-import CircularProgress from "@mui/material/CircularProgress";
 import {
   Typography,
   Container,
@@ -24,12 +24,16 @@ import {
   TestType,
 } from "../constants";
 import {
-  runWorkflowOverrepresentation,
+  streamWorkflowOverrepresentation,
   MAX_OVERREP_GENE_COUNT,
 } from "../apis";
 import Footer from "../components/Footer";
-import { WorkflowOverrepresentationResponse } from "../models";
+import {
+  WorkflowOverrepresentationResponse,
+  WorkflowStreamEvent,
+} from "../models";
 import ResultDisplay from "../components/ResultDisplay";
+import { WorkflowStages, applyStageEvent } from "../workflowProgress";
 
 function Home() {
   const [isLoading, setIsLoading] = useState(false);
@@ -50,6 +54,13 @@ function Home() {
     input: ALL_GENE_MAPPING_FIELDS,
     reference: null as GeneMappingField[] | null,
   });
+  // Progress of the current run, from the streaming endpoint.
+  const [stageProgress, setStageProgress] = useState<WorkflowStages>({});
+  const [runStartedAt, setRunStartedAt] = useState(() => Date.now());
+  // Set when gene details (download data) fail after results are shown.
+  const [geneDetailsError, setGeneDetailsError] = useState<string | null>(null);
+  const [downloadsReady, setDownloadsReady] = useState(false);
+  const runAbortRef = useRef<AbortController | null>(null);
 
   const onRunTest = async (
     payload: any,
@@ -57,26 +68,29 @@ function Home() {
     testType: TestType,
     correction: CorrectionType
   ) => {
+    runAbortRef.current?.abort();
+    const controller = new AbortController();
+    runAbortRef.current = controller;
+
     setIsLoading(true);
     setError(null);
     setSuccess(false);
+    setGeneDetailsError(null);
+    setDownloadsReady(false);
+    setStageProgress({});
+    setRunStartedAt(Date.now());
 
-    try {
-      const response = await runWorkflowOverrepresentation(
-        payload,
-        dataset,
-        correction,
-        testType
-      );
+    let gotResult = false;
+    let gotGeneDetails = false;
+    let gotError = false;
+
+    // Returns false when the results cannot be shown.
+    const showResults = (response: WorkflowOverrepresentationResponse) => {
       setWorkflowResponse(response);
 
-      if (!response) {
-        setError("No data returned from the server. Please try again.");
-        return;
-      }
       if (response.gene_list.length === 0) {
         setError("No genes found. Please check your input.");
-        return;
+        return false;
       }
 
       if (response.gene_list.length > MAX_OVERREP_GENE_COUNT) {
@@ -85,7 +99,7 @@ function Home() {
             `Your input produced ${response.gene_list.length.toLocaleString()} unique genes. ` +
             "Please reduce the number of input variants and try again."
         );
-        return;
+        return false;
       }
 
       setPantherId({
@@ -109,10 +123,77 @@ function Home() {
 
       setCurrentStage(2);
       setSuccess(true);
+      return true;
+    };
+
+    const onEvent = (event: WorkflowStreamEvent) => {
+      if (controller.signal.aborted) {
+        return;
+      }
+      switch (event.event) {
+        case "stage":
+          setStageProgress((prev) => applyStageEvent(prev, event, Date.now()));
+          break;
+        case "result":
+          gotResult = true;
+          setIsLoading(false);
+          if (!showResults(event.data)) {
+            // Nothing to download for results that are not shown.
+            controller.abort();
+          }
+          break;
+        case "gene_details":
+          gotGeneDetails = true;
+          setWorkflowResponse((prev) => (prev ? { ...prev, ...event.data } : prev));
+          setDownloadsReady(true);
+          break;
+        case "error":
+          gotError = true;
+          if (gotResult) {
+            // Results are already on screen; only downloads are affected.
+            setGeneDetailsError(event.detail);
+          } else {
+            setError(event.detail);
+          }
+          break;
+      }
+    };
+
+    try {
+      await streamWorkflowOverrepresentation(
+        payload,
+        dataset,
+        correction,
+        testType,
+        onEvent,
+        controller.signal
+      );
+      if (controller.signal.aborted || gotError) {
+        return;
+      }
+      if (!gotResult) {
+        setError(
+          "The server closed the connection before the analysis finished. Please try again."
+        );
+      } else if (!gotGeneDetails) {
+        setGeneDetailsError("The server closed the connection before download data arrived.");
+      }
     } catch (error: any) {
-      setError(error?.message || "Error occurred while fetching data. Please try again.");
+      if (controller.signal.aborted) {
+        return;
+      }
+      const message =
+        error?.message || "Error occurred while fetching data. Please try again.";
+      if (gotResult) {
+        setGeneDetailsError(message);
+      } else {
+        setError(message);
+      }
     } finally {
-      setIsLoading(false);
+      if (runAbortRef.current === controller) {
+        runAbortRef.current = null;
+        setIsLoading(false);
+      }
     }
   };
 
@@ -196,6 +277,11 @@ function Home() {
   };
 
   const resetAnalysis = () => {
+    // Stops any download data still being prepared for these results.
+    runAbortRef.current?.abort();
+    runAbortRef.current = null;
+    setIsLoading(false);
+    setGeneDetailsError(null);
     setCurrentStage(1);
     setWorkflowResponse(null);
     setError(null);
@@ -302,23 +388,7 @@ function Home() {
             }}
           >
             {isLoading && (
-              <Box
-                sx={{
-                  p: 2,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  bgcolor: "primary.light",
-                  color: "primary.contrastText",
-                  borderRadius: 1,
-                  mb: 2,
-                }}
-              >
-                <CircularProgress size={20} color="inherit" sx={{ mr: 1 }} />
-                <Typography variant="body2">
-                  Processing your request, please wait...
-                </Typography>
-              </Box>
+              <ProgressPanel stages={stageProgress} startedAt={runStartedAt} />
             )}
 
             <TestInputs
@@ -340,6 +410,9 @@ function Home() {
             inputTypeUsed={resultInputType}
             inputMappingFields={resultMappingFields.input}
             referenceMappingFields={resultMappingFields.reference}
+            downloadsReady={downloadsReady}
+            geneDetailsProgress={stageProgress.gene_details ?? null}
+            geneDetailsError={geneDetailsError}
           />
         )}
 
