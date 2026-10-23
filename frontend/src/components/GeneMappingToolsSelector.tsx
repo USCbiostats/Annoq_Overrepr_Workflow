@@ -5,9 +5,13 @@ import {
   AccordionSummary,
   Box,
   Checkbox,
-  Divider,
   FormControlLabel,
   Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
   Typography,
 } from "@mui/material";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
@@ -68,7 +72,8 @@ const GeneMappingToolsSelector: React.FC<GeneMappingToolsSelectorProps> = ({
     emit(next);
   };
 
-  // Checked -> clear both; unchecked or partially checked -> select both.
+  // Checked -> clear all gene models; unchecked or partially checked
+  // (shown with a dash) -> select all of them.
   const toggleTool = (tool: GeneMappingTool) => {
     const fields = toolFields(tool);
     const allSelected = fields.every((field) => selected.has(field));
@@ -78,6 +83,20 @@ const GeneMappingToolsSelector: React.FC<GeneMappingToolsSelectorProps> = ({
     );
     emit(next);
   };
+
+  const geneModelCheckbox = (field: GeneMappingField, label: string) => (
+    <FormControlLabel
+      control={
+        <Checkbox
+          size="small"
+          checked={selected.has(field)}
+          onChange={() => toggleField(field)}
+          disabled={checkboxesDisabled}
+        />
+      }
+      label={label}
+    />
+  );
 
   const summary = sameAsInput?.checked
     ? "Same as input list"
@@ -110,65 +129,63 @@ const GeneMappingToolsSelector: React.FC<GeneMappingToolsSelectorProps> = ({
           sx={{ mb: 1 }}
         />
       )}
-      <Stack divider={<Divider flexItem />} spacing={0.5}>
-        {GENE_MAPPING_TOOLS.map((tool) => {
-          const fields = toolFields(tool);
-          const selectedCount = fields.filter((field) =>
-            selected.has(field)
-          ).length;
-
-          return (
-            <Stack
-              key={tool.label}
-              direction={{ xs: "column", sm: "row" }}
-              alignItems={{ xs: "flex-start", sm: "center" }}
-            >
-              <FormControlLabel
-                control={
+      <Table size="small" sx={{ "& td, & th": { px: 1 } }}>
+        <TableHead>
+          <TableRow>
+            <TableCell sx={{ fontWeight: 600 }}>Mapping method</TableCell>
+            <TableCell sx={{ fontWeight: 600 }} align="center">
+              Use method
+            </TableCell>
+            <TableCell sx={{ fontWeight: 600 }}>Gene model</TableCell>
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {GENE_MAPPING_TOOLS.map((tool) => {
+            const fields = toolFields(tool);
+            const selectedCount = fields.filter((field) =>
+              selected.has(field)
+            ).length;
+            const inUse = selectedCount > 0;
+            return (
+              <TableRow
+                key={tool.label}
+                sx={{ "&:last-child td": { borderBottom: 0 } }}
+              >
+                <TableCell
+                  sx={{
+                    color: inUse ? "text.primary" : "text.secondary",
+                    fontWeight: inUse ? 600 : 400,
+                  }}
+                >
+                  {tool.label}
+                </TableCell>
+                <TableCell align="center">
+                  {/* Larger and green so it reads differently from the
+                      small blue gene model checkboxes. */}
                   <Checkbox
+                    color="success"
                     checked={selectedCount === fields.length}
-                    indeterminate={
-                      selectedCount > 0 && selectedCount < fields.length
-                    }
+                    indeterminate={inUse && selectedCount < fields.length}
                     onChange={() => toggleTool(tool)}
                     disabled={checkboxesDisabled}
+                    inputProps={{ "aria-label": `Use ${tool.label}` }}
+                    sx={{ "& .MuiSvgIcon-root": { fontSize: 28 } }}
                   />
-                }
-                label={tool.label}
-                sx={{ minWidth: 160 }}
-              />
-              {!tool.field && (
-                <Stack direction="row" sx={{ pl: { xs: 4, sm: 0 } }}>
-                  {tool.ensembl && (
-                    <FormControlLabel
-                      control={
-                        <Checkbox
-                          checked={selected.has(tool.ensembl)}
-                          onChange={() => toggleField(tool.ensembl!)}
-                          disabled={checkboxesDisabled}
-                        />
-                      }
-                      label="Ensembl"
-                    />
+                </TableCell>
+                <TableCell>
+                  {!tool.field && (
+                    <Stack direction="row" flexWrap="wrap">
+                      {tool.ensembl &&
+                        geneModelCheckbox(tool.ensembl, "Ensembl")}
+                      {tool.refseq && geneModelCheckbox(tool.refseq, "RefSeq")}
+                    </Stack>
                   )}
-                  {tool.refseq && (
-                    <FormControlLabel
-                      control={
-                        <Checkbox
-                          checked={selected.has(tool.refseq)}
-                          onChange={() => toggleField(tool.refseq!)}
-                          disabled={checkboxesDisabled}
-                        />
-                      }
-                      label="RefSeq"
-                    />
-                  )}
-                </Stack>
-              )}
-            </Stack>
-          );
-        })}
-      </Stack>
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
       {value.length === 0 && (
         <Typography variant="body2" color="error" sx={{ mt: 1 }}>
           Select at least one SNP-to-gene mapping tool.
