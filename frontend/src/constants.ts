@@ -1,6 +1,8 @@
 export enum InputTypes {
     RSIDS = "rsIdList",
-    VCF = "vcf"
+    VCF = "vcf",
+    // Reference list only: gene IDs sent to PANTHER without AnnoQ mapping.
+    GENES = "geneList"
 }
 
 // AnnoQ gene columns used to map SNPs to genes. Values must match the backend.

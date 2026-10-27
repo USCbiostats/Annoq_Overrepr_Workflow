@@ -19,6 +19,7 @@ from src.config import config
 from src.models import (
     OverrepresentationResultItem,
     PantherGeneInfoResponse,
+    ReferenceListInput,
     SnpListInput,
     WorkflowGeneMappingsResponse,
     WorkflowInputRequest,
@@ -26,7 +27,7 @@ from src.models import (
     WorkflowOverrepresentationResponse,
 )
 from src.panther import get_panther_info
-from src.progress import ProgressCallback
+from src.progress import ProgressCallback, report_progress
 from src.query import InputType
 from src.workflow import (
     PantherInputError,
@@ -137,6 +138,27 @@ async def _run_mapping_pipeline(
     return all_unique_genes, rs_id_gene_mapping
 
 
+async def _read_reference_gene_list(
+    reference_list: ReferenceListInput,
+    on_progress: ProgressCallback | None = None,
+) -> tuple[list[str], dict[str, list[str]]]:
+    """Use a reference gene list as it is: no AnnoQ mapping is needed."""
+    if reference_list.geneListQuery is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Reference list payload is missing for input_type 'geneList'.",
+        )
+    report_progress(on_progress, 0, 1)
+    genes = list(
+        dict.fromkeys(
+            gene.strip() for gene in reference_list.geneListQuery.genes if gene.strip()
+        )
+    )
+    _validate_panther_gene_limit(genes, "Reference list")
+    report_progress(on_progress, 1, 1)
+    return genes, {}
+
+
 # Runs one workflow stage: run_stage(stage name, make_coro) where make_coro
 # receives the stage's progress callback (or None) and returns a coroutine.
 StageRunner = Callable[
@@ -179,8 +201,12 @@ async def _map_request_lists(
         jobs.append(
             run_stage(
                 "reference",
-                lambda on_progress: _run_mapping_pipeline(
-                    reference_list, "Reference list", on_progress
+                lambda on_progress: (
+                    _read_reference_gene_list(reference_list, on_progress)
+                    if reference_list.input_type == InputType.geneList
+                    else _run_mapping_pipeline(
+                        reference_list, "Reference list", on_progress
+                    )
                 ),
             )
         )

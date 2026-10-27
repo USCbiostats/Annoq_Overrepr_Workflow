@@ -425,3 +425,79 @@ def test_stream_rejects_invalid_request_before_streaming(client, fake_services):
     )
 
     assert response.status_code == 422
+
+
+GENE_LIST_REFERENCE = {
+    "input_type": "geneList",
+    "geneListQuery": {"genes": ["GENEA", " REFX ", "", "GENEA", "REFY"]},
+}
+
+
+def test_endpoint_with_gene_list_reference(client, fake_services, main_module, monkeypatch):
+    annoq_queries = []
+    original_get_annoq_df = main_module.get_annoq_df
+
+    async def recording_get_annoq_df(input_type, query, on_progress=None):
+        annoq_queries.append(input_type)
+        return await original_get_annoq_df(input_type, query, on_progress)
+
+    monkeypatch.setattr(main_module, "get_annoq_df", recording_get_annoq_df)
+
+    response = client.post(
+        "/workflow/overrepresentation",
+        json={**BASE_REQUEST, "referenceList": GENE_LIST_REFERENCE},
+    )
+
+    assert response.status_code == 200
+    # Gene list is used as it is: blanks and duplicates dropped, no AnnoQ call.
+    assert response.json()["reference_gene_list"] == ["GENEA", "REFX", "REFY"]
+    assert fake_services["overrep"]["ref_gene_list"] == ["GENEA", "REFX", "REFY"]
+    assert [t.value for t in annoq_queries] == ["ids"]
+
+
+def test_stream_with_gene_list_reference(client, fake_services):
+    events = _stream_events(
+        client, {**BASE_REQUEST, "referenceList": GENE_LIST_REFERENCE}
+    )
+
+    reference = [e for e in events if e.get("stage") == "reference"]
+    assert reference[-1]["status"] == "done"
+    assert (1, 1) in [(e["done"], e["total"]) for e in reference]
+    result = next(e for e in events if e["event"] == "result")["data"]
+    assert result["reference_gene_list"] == ["GENEA", "REFX", "REFY"]
+
+
+def test_gene_list_reference_without_genes_is_rejected(client, fake_services):
+    response = client.post(
+        "/workflow/overrepresentation",
+        json={
+            **BASE_REQUEST,
+            "referenceList": {"input_type": "geneList", "geneListQuery": {"genes": [" ", ""]}},
+        },
+    )
+
+    assert response.status_code == 422
+    assert "reference" in response.json()["detail"].lower()
+
+
+def test_gene_list_reference_without_payload_is_rejected(client, fake_services):
+    response = client.post(
+        "/workflow/overrepresentation",
+        json={**BASE_REQUEST, "referenceList": {"input_type": "geneList"}},
+    )
+
+    assert response.status_code == 422
+    assert "geneList" in response.json()["detail"]
+
+
+def test_gene_list_is_not_accepted_as_input_list(client, fake_services):
+    response = client.post(
+        "/workflow/overrepresentation",
+        json={
+            "input_type": "geneList",
+            "annotDataSet": "GO:0008150",
+        },
+    )
+
+    assert response.status_code == 422
+    assert "only supported for referenceList" in response.text

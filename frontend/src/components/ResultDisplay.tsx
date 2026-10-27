@@ -586,11 +586,14 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
           </Typography>
           <Typography variant="body2" color="text.secondary">
             Reference list:{" "}
-            {workflowResponse?.reference_gene_list?.length
-              ? `Custom (${workflowResponse.reference_gene_list.length.toLocaleString()} genes; mapping tools: ${describeGeneMappingFields(
-                  referenceMappingFields ?? []
-                )})`
-              : "All human genes (PANTHER default)"}
+            {!workflowResponse?.reference_gene_list?.length
+              ? "All human genes (PANTHER default)"
+              : referenceMappingFields === null
+              ? // A gene list reference is not mapped through AnnoQ.
+                `Custom gene list (${workflowResponse.reference_gene_list.length.toLocaleString()} genes)`
+              : `Custom (${workflowResponse.reference_gene_list.length.toLocaleString()} genes; mapping tools: ${describeGeneMappingFields(
+                  referenceMappingFields
+                )})`}
           </Typography>
         </Box>
         <Box>

@@ -4,7 +4,15 @@ from typing import Any
 from pydantic import BaseModel, Field, field_validator
 
 from src.gene_cols import ALL_GENE_MAPPING_FIELDS, GeneMappingField
-from src.query import GeneQuery, IdsQuery, InputType, KeywordQuery, RsIdListQuery, RsIdQuery
+from src.query import (
+    GeneListQuery,
+    GeneQuery,
+    IdsQuery,
+    InputType,
+    KeywordQuery,
+    RsIdListQuery,
+    RsIdQuery,
+)
 
 
 class GeneInfo(BaseModel):
@@ -126,15 +134,38 @@ class SnpListInput(BaseModel):
 class WorkflowInputRequest(SnpListInput):
     """Shared SNPWay workflow input request model."""
 
+    @field_validator("input_type")
+    @classmethod
+    def _reject_gene_list_input(cls, input_type: InputType) -> InputType:
+        if input_type == InputType.geneList:
+            raise ValueError(
+                "input_type 'geneList' is only supported for referenceList"
+            )
+        return input_type
+
 
 class ReferenceListInput(SnpListInput):
-    """Custom reference SNP list used in place of PANTHER's all-genes reference."""
+    """Custom reference list used in place of PANTHER's all-genes reference.
+
+    Either SNPs ('ids' or 'rsIdList'), which are mapped to genes through AnnoQ
+    using geneMappingFields, or a 'geneList' sent to PANTHER as it is.
+    """
+
+    geneListQuery: GeneListQuery | None = Field(
+        default=None,
+        description=(
+            "Gene IDs for input_type 'geneList' (any ID type PANTHER accepts, "
+            "e.g. gene symbols or Ensembl IDs). geneMappingFields is ignored."
+        ),
+    )
 
     @field_validator("input_type")
     @classmethod
     def _validate_reference_input_type(cls, input_type: InputType) -> InputType:
-        if input_type not in (InputType.ids, InputType.rsIdList):
-            raise ValueError("Reference list input_type must be 'ids' or 'rsIdList'")
+        if input_type not in (InputType.ids, InputType.rsIdList, InputType.geneList):
+            raise ValueError(
+                "Reference list input_type must be 'ids', 'rsIdList' or 'geneList'"
+            )
         return input_type
 
 

@@ -27,7 +27,49 @@ export type SnpListInputPanelProps = {
   onTextChange: (text: string) => void;
   sampleVcf: SnpListSample;
   sampleRsIds: SnpListSample;
+  // Offers "Gene list" as a type (reference lists only).
+  allowGeneList?: boolean;
+  sampleGenes?: SnpListSample;
   disabled?: boolean;
+};
+
+const TYPE_TEXT: Record<
+  InputTypes,
+  {
+    menu: string;
+    field: string;
+    placeholder: string;
+    upload: string;
+    sample: string;
+    entries: string;
+  }
+> = {
+  [InputTypes.VCF]: {
+    menu: "VCF file",
+    field: "VCF file",
+    placeholder: "Paste VCF content",
+    upload: "Upload VCF file",
+    sample: "Sample VCF file",
+    entries: "variants",
+  },
+  [InputTypes.RSIDS]: {
+    menu: "rsIDs",
+    field: "rsIDs",
+    placeholder: "Enter rsIDs separated by commas, spaces, or new lines",
+    upload: "Populate from file",
+    sample: "Sample rsID list",
+    entries: "rsIDs",
+  },
+  [InputTypes.GENES]: {
+    menu: "Gene list",
+    field: "Gene list",
+    placeholder:
+      "Enter one gene ID per line (e.g. gene symbols or Ensembl IDs). " +
+      "For tab-delimited files, the first column is used.",
+    upload: "Upload gene list file",
+    sample: "Sample gene list",
+    entries: "genes",
+  },
 };
 
 type LoadedFile = {
@@ -44,16 +86,23 @@ const SnpListInputPanel: React.FC<SnpListInputPanelProps> = ({
   onTextChange,
   sampleVcf,
   sampleRsIds,
+  allowGeneList = false,
+  sampleGenes,
   disabled = false,
 }) => {
   const [loadedFile, setLoadedFile] = useState<LoadedFile | null>(null);
   const [readingFileName, setReadingFileName] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const isVcf = inputType === InputTypes.VCF;
-  const sample = isVcf ? sampleVcf : sampleRsIds;
+  const typeText = TYPE_TEXT[inputType];
+  const sample =
+    inputType === InputTypes.VCF
+      ? sampleVcf
+      : inputType === InputTypes.RSIDS
+      ? sampleRsIds
+      : sampleGenes;
   const labelId = `${idPrefix}-type-label`;
-  const entryLabel = isVcf ? "variants" : "rsIDs";
+  const entryLabel = typeText.entries;
 
   // An uploaded file is shown as a read-only preview. Any other change to the
   // text (clear, sample, reset by the parent) drops back to editable mode.
@@ -95,6 +144,9 @@ const SnpListInputPanel: React.FC<SnpListInputPanelProps> = ({
 
   const handleSampleClick = async () => {
     setLoadError(null);
+    if (!sample) {
+      return;
+    }
     if (typeof sample === "string") {
       onTextChange(sample);
       return;
@@ -127,8 +179,10 @@ const SnpListInputPanel: React.FC<SnpListInputPanelProps> = ({
       parts.push(`${summary.invalidRows.toLocaleString()} invalid rows skipped`);
     }
     const counts = parts.join(", ");
+    const firstColumnNote =
+      inputType === InputTypes.GENES ? "first column, " : "";
     helperText = showingFile
-      ? `Loaded ${loadedFile.name}: ${counts} (showing first ${SNP_LIST_PREVIEW_COUNT})`
+      ? `Loaded ${loadedFile.name}: ${counts} (${firstColumnNote}showing first ${SNP_LIST_PREVIEW_COUNT})`
       : counts;
   }
 
@@ -145,23 +199,28 @@ const SnpListInputPanel: React.FC<SnpListInputPanelProps> = ({
             onInputTypeChange(e.target.value as InputTypes);
           }}
         >
-          <MenuItem value={InputTypes.VCF}>VCF file</MenuItem>
-          <MenuItem value={InputTypes.RSIDS}>rsIDs</MenuItem>
+          <MenuItem value={InputTypes.VCF}>
+            {TYPE_TEXT[InputTypes.VCF].menu}
+          </MenuItem>
+          <MenuItem value={InputTypes.RSIDS}>
+            {TYPE_TEXT[InputTypes.RSIDS].menu}
+          </MenuItem>
+          {allowGeneList && (
+            <MenuItem value={InputTypes.GENES}>
+              {TYPE_TEXT[InputTypes.GENES].menu}
+            </MenuItem>
+          )}
         </Select>
       </FormControl>
 
       <Stack spacing={1.5}>
         <TextField
-          label={isVcf ? "VCF file" : "rsIDs"}
+          label={typeText.field}
           value={showingFile && summary ? summary.preview : text}
           onChange={(e) => onTextChange(e.target.value)}
           multiline
           rows={5}
-          placeholder={
-            isVcf
-              ? "Paste VCF content"
-              : "Enter rsIDs separated by commas, spaces, or new lines"
-          }
+          placeholder={typeText.placeholder}
           helperText={helperText || " "}
           error={loadError !== null && readingFileName === null}
           slotProps={{ input: { readOnly: showingFile } }}
@@ -173,21 +232,23 @@ const SnpListInputPanel: React.FC<SnpListInputPanelProps> = ({
             disabled={readingFileName !== null}
           >
             <UploadFile />
-            {isVcf ? "Upload VCF file" : "Populate from file"}
+            {typeText.upload}
             <input
               style={{ display: "none" }}
               type="file"
               onChange={handleFileChange}
             />
           </Button>
-          <Button
-            variant="outlined"
-            color="warning"
-            onClick={handleSampleClick}
-            disabled={!sample || readingFileName !== null}
-          >
-            {isVcf ? "Sample VCF file" : "Sample rsID list"}
-          </Button>
+          {sample !== undefined && (
+            <Button
+              variant="outlined"
+              color="warning"
+              onClick={handleSampleClick}
+              disabled={!sample || readingFileName !== null}
+            >
+              {typeText.sample}
+            </Button>
+          )}
           <Button
             variant="outlined"
             color="secondary"

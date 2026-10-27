@@ -60,6 +60,7 @@ function Home() {
   // Set when gene details (download data) fail after results are shown.
   const [geneDetailsError, setGeneDetailsError] = useState<string | null>(null);
   const [downloadsReady, setDownloadsReady] = useState(false);
+  const [referenceIsGeneList, setReferenceIsGeneList] = useState(false);
   const runAbortRef = useRef<AbortController | null>(null);
 
   const onRunTest = async (
@@ -79,6 +80,9 @@ function Home() {
     setDownloadsReady(false);
     setStageProgress({});
     setRunStartedAt(Date.now());
+    setReferenceIsGeneList(
+      payload?.referenceList?.input_type === InputTypes.GENES
+    );
 
     let gotResult = false;
     let gotGeneDetails = false;
@@ -118,7 +122,11 @@ function Home() {
       setResultInputType(nextResultInputType);
       setResultMappingFields({
         input: payload?.geneMappingFields ?? ALL_GENE_MAPPING_FIELDS,
-        reference: payload?.referenceList?.geneMappingFields ?? null,
+        // A reference gene list is not mapped, so it has no mapping tools.
+        reference:
+          payload?.referenceList?.input_type === InputTypes.GENES
+            ? null
+            : payload?.referenceList?.geneMappingFields ?? null,
       });
 
       setCurrentStage(2);
@@ -388,7 +396,15 @@ function Home() {
             }}
           >
             {isLoading && (
-              <ProgressPanel stages={stageProgress} startedAt={runStartedAt} />
+              <ProgressPanel
+                stages={stageProgress}
+                startedAt={runStartedAt}
+                stageLabels={
+                  referenceIsGeneList
+                    ? { reference: "Reading reference gene list" }
+                    : undefined
+                }
+              />
             )}
 
             <TestInputs

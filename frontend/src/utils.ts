@@ -74,6 +74,24 @@ export const parseVcfToIds = (
     return { ids, invalidRows };
 };
 
+// Reads a gene list: one entry per line. For tab-delimited files only the
+// first column is used. Blank lines and lines starting with "#" are skipped,
+// and duplicates are removed.
+export const parseGeneList = (text: string): string[] => {
+    const genes: string[] = [];
+    for (const line of text.split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith("#")) {
+            continue;
+        }
+        const gene = trimmed.split("\t")[0].trim();
+        if (gene) {
+            genes.push(gene);
+        }
+    }
+    return [...new Set(genes)];
+};
+
 export const SNP_LIST_PREVIEW_COUNT = 100;
 
 export type SnpListSummary = {
@@ -117,19 +135,27 @@ export const summarizeSnpList = (
         };
     }
 
-    const rsIds = process_rsids(text);
-    const previewIds = rsIds.slice(0, previewCount);
-    const remaining = rsIds.length - previewIds.length;
+    const isGeneList = inputType === InputTypes.GENES;
+    const entries = isGeneList ? parseGeneList(text) : process_rsids(text);
+    const previewEntries = entries.slice(0, previewCount);
+    const remaining = entries.length - previewEntries.length;
     if (remaining > 0) {
-        previewIds.push(`... (${remaining.toLocaleString()} more rsIDs)`);
+        previewEntries.push(
+            `... (${remaining.toLocaleString()} more ${isGeneList ? "genes" : "rsIDs"})`
+        );
     }
-    return { count: rsIds.length, invalidRows: 0, preview: previewIds.join("\n") };
+    return {
+        count: entries.length,
+        invalidRows: 0,
+        preview: previewEntries.join("\n"),
+    };
 };
 
 export type SnpListPayload = {
     input_type: string;
     idsQuery?: { ids: string[] };
     rsIdListQuery?: { rsIdList: string[] };
+    geneListQuery?: { genes: string[] };
     geneMappingFields: GeneMappingField[];
 }
 
@@ -161,6 +187,22 @@ export const buildSnpListPayload = (
                 invalidRows > 0
                     ? `Skipped ${invalidRows} invalid ${listName}VCF row(s). Continue with ${uniqueIds.length} valid position(s).`
                     : null,
+        };
+    }
+
+    if (inputType === InputTypes.GENES) {
+        const genes = parseGeneList(text);
+        if (genes.length === 0) {
+            throw new Error(`No genes were found in the ${listName}gene list.`);
+        }
+        // Mapping tools do not apply: genes go to PANTHER as they are.
+        return {
+            payload: {
+                input_type: InputTypes.GENES,
+                geneListQuery: { genes },
+                geneMappingFields,
+            },
+            warning: null,
         };
     }
 

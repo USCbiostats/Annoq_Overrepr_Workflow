@@ -9,7 +9,7 @@ import {
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import ErrorIcon from "@mui/icons-material/Error";
 import RadioButtonUncheckedIcon from "@mui/icons-material/RadioButtonUnchecked";
-import { WorkflowStageProgress } from "../models";
+import { WorkflowStageName, WorkflowStageProgress } from "../models";
 import {
   STAGE_LABELS,
   STAGE_ORDER,
@@ -102,10 +102,16 @@ export const StageRow: React.FC<{
 export type ProgressPanelProps = {
   stages: WorkflowStages;
   startedAt: number;
+  // Replaces the default label of a stage, e.g. for a reference gene list.
+  stageLabels?: Partial<Record<WorkflowStageName, string>>;
 };
 
 // Shows each workflow stage with its status, batch progress and timing.
-const ProgressPanel: React.FC<ProgressPanelProps> = ({ stages, startedAt }) => {
+const ProgressPanel: React.FC<ProgressPanelProps> = ({
+  stages,
+  startedAt,
+  stageLabels,
+}) => {
   const now = useNow(true);
 
   return (
@@ -130,7 +136,12 @@ const ProgressPanel: React.FC<ProgressPanelProps> = ({ stages, startedAt }) => {
         {STAGE_ORDER.map((name) => {
           const stage = stages[name];
           return stage ? (
-            <StageRow key={name} label={STAGE_LABELS[name]} stage={stage} now={now} />
+            <StageRow
+              key={name}
+              label={stageLabels?.[name] ?? STAGE_LABELS[name]}
+              stage={stage}
+              now={now}
+            />
           ) : null;
         })}
       </Stack>

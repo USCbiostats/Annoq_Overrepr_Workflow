@@ -71,6 +71,11 @@ const SAMPLE_REFERENCE_RSIDS: SnpListSample = {
   url: `${import.meta.env.BASE_URL}samples/reference_sample_100K_rsids.txt`,
   fileName: "reference_sample_100K_rsids.txt",
 };
+// PANTHER export of human genes (tab-delimited; the first column is used).
+const SAMPLE_REFERENCE_GENES: SnpListSample = {
+  url: `${import.meta.env.BASE_URL}samples/reference_sample_genes.txt`,
+  fileName: "reference_sample_genes.txt",
+};
 
 export type TestInputsProps = {
   onRunTest: (
@@ -112,12 +117,16 @@ const TestInputs: React.FC<TestInputsProps> = ({
     ? inputMappingFields
     : refMappingFields;
 
+  // Gene lists go to PANTHER as they are, so mapping tools do not apply.
+  const refIsGeneList = refInputType === InputTypes.GENES;
+
   const submitDisabled =
     isLoading ||
     !inputText.trim() ||
     inputMappingFields.length === 0 ||
     (useCustomReference &&
-      (!refText.trim() || effectiveRefMappingFields.length === 0));
+      (!refText.trim() ||
+        (!refIsGeneList && effectiveRefMappingFields.length === 0)));
 
   const query_data = () => {
     const input = buildSnpListPayload(
@@ -289,27 +298,38 @@ const TestInputs: React.FC<TestInputsProps> = ({
                       <Stack spacing={3} sx={{ mt: 2 }}>
                         <SnpListInputPanel
                           idPrefix="reference"
-                          selectLabel="Retrieve reference SNP data by"
+                          selectLabel="Reference list type"
                           inputType={refInputType}
                           onInputTypeChange={setRefInputType}
                           text={refText}
                           onTextChange={setRefText}
                           sampleVcf={SAMPLE_REFERENCE_VCF}
                           sampleRsIds={SAMPLE_REFERENCE_RSIDS}
+                          sampleGenes={SAMPLE_REFERENCE_GENES}
+                          allowGeneList
                           disabled={isLoading}
                         />
                         <Divider />
-                        <GeneMappingToolsSelector
-                          title="SNP to gene mapping annotation tools for reference list"
-                          value={effectiveRefMappingFields}
-                          onChange={setRefMappingFields}
-                          disabled={isLoading}
-                          collapsible={false}
-                          sameAsInput={{
-                            checked: refSameAsInput,
-                            onChange: handleRefSameAsInputChange,
-                          }}
-                        />
+                        {refIsGeneList ? (
+                          <Typography variant="body2" color="text.secondary">
+                            Gene lists are sent to PANTHER as the reference
+                            list as they are, so SNP to gene mapping tools do
+                            not apply. Use gene IDs PANTHER recognizes, such as
+                            gene symbols or Ensembl IDs.
+                          </Typography>
+                        ) : (
+                          <GeneMappingToolsSelector
+                            title="SNP to gene mapping annotation tools for reference list"
+                            value={effectiveRefMappingFields}
+                            onChange={setRefMappingFields}
+                            disabled={isLoading}
+                            collapsible={false}
+                            sameAsInput={{
+                              checked: refSameAsInput,
+                              onChange: handleRefSameAsInputChange,
+                            }}
+                          />
+                        )}
                       </Stack>
                     </Collapse>
                   </FormSection>

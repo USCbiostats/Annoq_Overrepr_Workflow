@@ -125,6 +125,16 @@ const Tutorial: React.FC = () => {
             mapped to genes using the same tools as the input list unless you
             uncheck "Same as input list" and choose different tools.
           </Typography>
+          <Typography variant="body1" sx={{ mt: 1 }}>
+            The custom reference list can also be a gene list. Choose "Gene list"
+            as the reference list type, then either type one gene ID per line or
+            upload a file. For a tab-delimited file, only the first column is
+            used. Blank lines, lines starting with "#", and duplicate genes are
+            ignored, and the first 100 genes of an uploaded file are shown with
+            the total count. A gene list is sent to PANTHER as it is, so the SNP
+            to gene mapping tools do not apply. Use gene IDs that PANTHER
+            recognizes, such as gene symbols or Ensembl gene IDs.
+          </Typography>
 
           <Divider sx={{ my: 3 }} />
 
