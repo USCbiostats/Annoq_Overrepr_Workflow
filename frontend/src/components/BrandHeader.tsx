@@ -1,4 +1,5 @@
 import { Box, Container, Link, Stack, Typography } from "@mui/material";
+import { Link as RouterLink } from "react-router-dom";
 import Logo from "../logos/SNPWay_logo.svg";
 import PantherLogo from "../logos/Panther Logo.jpg";
 
@@ -19,10 +20,18 @@ const BrandHeader = () => {
           justifyContent="space-between"
           sx={{ py: { xs: 2.5, md: 3 } }}
         >
+          {/* Logo and title link to the home page, which opens with a reset form. */}
           <Stack
+            component={RouterLink}
+            to="/"
+            aria-label="SNPWay home"
             direction={{ xs: "column", sm: "row" }}
             spacing={{ xs: 1.5, sm: 2.5 }}
             alignItems={{ xs: "flex-start", sm: "center" }}
+            sx={{
+              textDecoration: "none",
+              "&:hover": { opacity: 0.85 },
+            }}
           >
             <Box
               component="img"

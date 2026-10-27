@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import TestInputs from "../components/TestInputs";
 import TopBar from "../components/TopBar";
 import BrandHeader from "../components/BrandHeader";
@@ -62,6 +62,10 @@ function Home() {
   const [downloadsReady, setDownloadsReady] = useState(false);
   const [referenceIsGeneList, setReferenceIsGeneList] = useState(false);
   const runAbortRef = useRef<AbortController | null>(null);
+
+  // Stop any running analysis when the page is left or restarted from the
+  // Home link or logo.
+  useEffect(() => () => runAbortRef.current?.abort(), []);
 
   const onRunTest = async (
     payload: any,
