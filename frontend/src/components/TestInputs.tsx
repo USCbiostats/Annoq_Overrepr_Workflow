@@ -71,7 +71,8 @@ const SAMPLE_REFERENCE_RSIDS: SnpListSample = {
   url: `${import.meta.env.BASE_URL}samples/reference_sample_100K_rsids.txt`,
   fileName: "reference_sample_100K_rsids.txt",
 };
-// PANTHER export of human genes (tab-delimited; the first column is used).
+// One identifier per human gene from a PANTHER gene list export, mixing HGNC
+// IDs, UniProt IDs, gene names and gene symbols.
 const SAMPLE_REFERENCE_GENES: SnpListSample = {
   url: `${import.meta.env.BASE_URL}samples/reference_sample_genes.txt`,
   fileName: "reference_sample_genes.txt",
