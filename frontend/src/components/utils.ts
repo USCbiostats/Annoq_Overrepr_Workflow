@@ -104,6 +104,7 @@ export interface ResultTableRow {
   rsId: string;
   PANTHER_ID: string;
   mappedGenes: string[]; // Genes that map to both rsID and PANTHER_ID
+  status: string; // Input variant status from the input report
   PANTHER_family: string;
   PANTHER_Subfamily: string;
   PANTHER_Pathway: string;
@@ -126,6 +127,7 @@ const getRelevantColumns = (
     "rsId",
     "PANTHER_ID",
     "mappedGenes",
+    "status",
   ];
 
   if (!annotationDataset) {
@@ -222,6 +224,7 @@ export const createResultsTableData = (
             rsId,
             PANTHER_ID: pantherId,
             mappedGenes,
+            status: "annotated",
             PANTHER_family: geneInfo.PANTHER_family,
             PANTHER_Subfamily: geneInfo.PANTHER_Subfamily,
             PANTHER_Pathway: geneInfo.PANTHER_Pathway,
@@ -239,6 +242,36 @@ export const createResultsTableData = (
           });
         }
       }
+    }
+  }
+
+  // The full download has a row for every input variant: no_record and
+  // no_gene variants, and annotated variants with no PANTHER row, appear
+  // with empty PANTHER fields.
+  if (!pantherIdsSet && geneMappingResponse.input_report) {
+    const variantsWithRows = new Set(tableData.map((row) => row.rsId));
+    for (const variant of geneMappingResponse.input_report.variants) {
+      const rsId = variant.variant_key ?? variant.input;
+      if (variantsWithRows.has(rsId)) continue;
+      variantsWithRows.add(rsId);
+      tableData.push({
+        rsId,
+        PANTHER_ID: "",
+        mappedGenes:
+          variant.status === "annotated" ? rsId_genes_map[rsId] || [] : [],
+        status: variant.status,
+        PANTHER_family: "",
+        PANTHER_Subfamily: "",
+        PANTHER_Pathway: "",
+        Protein_Class: "",
+        Reactome_Pathway: "",
+        GO_database_MF_complete: "",
+        GO_database_BP_complete: "",
+        GO_database_CC_complete: "",
+        PANTHER_GO_slim_Molecular_Function: "",
+        PANTHER_GO_slim_Biological_Process: "",
+        PANTHER_GO_slim_Cellular_Component: "",
+      });
     }
   }
 
