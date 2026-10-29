@@ -1,4 +1,5 @@
 import { GeneMappingDownloadData, InputReport } from "../models";
+import { parseVcfLines } from "../utils";
 
 const csvText = (value: string | null): string =>
   `"${(value ?? "").replace(/"/g, '""')}"`;
@@ -9,23 +10,67 @@ const summaryHeaderLines = (report: InputReport): string[] =>
     ([name, value]) => `# ${name},${value ?? ""}`
   );
 
-// One row per submitted variant: annotated, no_record or no_gene.
+// One row per submitted variant: annotated, no_record or no_gene. With the
+// original VCF text, one row per VCF data line instead: the position-level
+// status joined back to the line, and status "invalid" for lines skipped at
+// parse time.
 export const createInputVariantReportCsv = (
   report: InputReport,
-  inputColumnLabel: string
-): string =>
-  [
-    ...summaryHeaderLines(report),
-    `${inputColumnLabel},variant_key,status,n_genes`,
-    ...report.variants.map((row) =>
+  inputColumnLabel: string,
+  vcfText: string | null = null
+): string => {
+  if (vcfText === null) {
+    return (
       [
-        csvText(row.input),
-        csvText(row.variant_key),
-        row.status,
-        row.n_genes,
-      ].join(",")
-    ),
-  ].join("\n") + "\n";
+        ...summaryHeaderLines(report),
+        `${inputColumnLabel},variant_key,status,n_genes`,
+        ...report.variants.map((row) =>
+          [
+            csvText(row.input),
+            csvText(row.variant_key),
+            row.status,
+            row.n_genes,
+          ].join(",")
+        ),
+      ].join("\n") + "\n"
+    );
+  }
+
+  const variantsBySubmittedId = new Map(
+    report.variants.map((row) => [row.input, row])
+  );
+  const vcfLines = parseVcfLines(vcfText);
+  return (
+    [
+      ...summaryHeaderLines(report),
+      `# n_vcf_data_lines,${vcfLines.length}`,
+      `# n_vcf_lines_invalid,${vcfLines.filter((line) => line.submittedId === null).length}`,
+      `vcf_line,CHROM,POS,ID,REF,ALT,${inputColumnLabel},variant_key,status,n_genes`,
+      ...vcfLines.map((line) => {
+        const variant =
+          line.submittedId === null
+            ? undefined
+            : variantsBySubmittedId.get(line.submittedId);
+        const status =
+          line.submittedId === null
+            ? "invalid"
+            : variant?.status ?? "not_in_report";
+        return [
+          line.lineNumber,
+          csvText(line.chrom),
+          csvText(line.pos),
+          csvText(line.id),
+          csvText(line.ref),
+          csvText(line.alt),
+          csvText(line.submittedId),
+          csvText(variant?.variant_key ?? null),
+          status,
+          variant ? variant.n_genes : "",
+        ].join(",");
+      }),
+    ].join("\n") + "\n"
+  );
+};
 
 // One row per gene identifier sent to PANTHER, with PANTHER's mapped status.
 export const createGeneIdentifierReportCsv = (report: InputReport): string =>

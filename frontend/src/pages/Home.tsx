@@ -50,6 +50,8 @@ function Home() {
   });
   const [resultInputType, setResultInputType] =
     useState<InputTypes | null>(null);
+  // Original VCF text of the shown results, for the input variant report.
+  const [resultVcfText, setResultVcfText] = useState<string | null>(null);
   const [resultMappingFields, setResultMappingFields] = useState({
     input: ALL_GENE_MAPPING_FIELDS,
     reference: null as GeneMappingField[] | null,
@@ -71,7 +73,8 @@ function Home() {
     payload: any,
     dataset: string,
     testType: TestType,
-    correction: CorrectionType
+    correction: CorrectionType,
+    inputVcfText: string | null
   ) => {
     runAbortRef.current?.abort();
     const controller = new AbortController();
@@ -124,6 +127,7 @@ function Home() {
           : null;
 
       setResultInputType(nextResultInputType);
+      setResultVcfText(inputVcfText);
       setResultMappingFields({
         input: payload?.geneMappingFields ?? ALL_GENE_MAPPING_FIELDS,
         // A reference gene list is not mapped, so it has no mapping tools.
@@ -428,6 +432,7 @@ function Home() {
             annotationDataset={pantherId.dataset}
             correctionType={pantherId.correction}
             inputTypeUsed={resultInputType}
+            inputVcfText={resultVcfText}
             inputMappingFields={resultMappingFields.input}
             referenceMappingFields={resultMappingFields.reference}
             downloadsReady={downloadsReady}

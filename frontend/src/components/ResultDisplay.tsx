@@ -49,6 +49,8 @@ interface ResultDisplayProps {
   annotationDataset: string;
   correctionType: CorrectionType;
   inputTypeUsed: InputTypes | null;
+  // Original VCF text (VCF input only), joined into the input variant report.
+  inputVcfText: string | null;
   inputMappingFields: GeneMappingField[];
   referenceMappingFields: GeneMappingField[] | null;
   // Gene details for downloads arrive after the results; downloads wait for them.
@@ -96,6 +98,7 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
   resetAnalysis,
   submitToPanther,
   inputTypeUsed,
+  inputVcfText,
   inputMappingFields,
   referenceMappingFields,
   downloadsReady,
@@ -317,7 +320,8 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
     saveCsvFile(
       createInputVariantReportCsv(
         inputReport,
-        inputTypeUsed === InputTypes.VCF ? "chr:pos" : "rsId"
+        inputTypeUsed === InputTypes.VCF ? "chr:pos" : "rsId",
+        inputTypeUsed === InputTypes.VCF ? inputVcfText : null
       ),
       "input_variant_report.csv"
     );
