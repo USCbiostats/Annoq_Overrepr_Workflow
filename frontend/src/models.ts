@@ -49,7 +49,8 @@ export type InputReportSummary = {
     n_no_gene: number;
     n_records_not_matched_to_input: number;
     n_identifiers_submitted: number;
-    n_identifiers_mapped_by_panther: number | null; // null when no overrepresentation test was run
+    n_identifiers_mapped_reported_by_panther: number | null; // null when no overrepresentation test was run
+    n_identifiers_matched_incl_suffix_rule: number | null; // mapped_by_panther "yes", incl. ".N" suffix matches
     n_identifiers_not_mapped_by_panther: number | null;
     n_identifiers_not_listed_by_panther: number | null;
 }

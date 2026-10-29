@@ -166,7 +166,8 @@ def test_build_input_report_summary():
         "n_no_gene": 1,
         "n_records_not_matched_to_input": 0,
         "n_identifiers_submitted": 2,
-        "n_identifiers_mapped_by_panther": 1,
+        "n_identifiers_mapped_reported_by_panther": 1,
+        "n_identifiers_matched_incl_suffix_rule": 1,
         "n_identifiers_not_mapped_by_panther": 1,
         "n_identifiers_not_listed_by_panther": 0,
     }
@@ -179,7 +180,18 @@ def test_build_input_report_without_overrepresentation_test():
 
     assert report.gene_identifiers is None
     assert report.summary.n_identifiers_submitted == 1
-    assert report.summary.n_identifiers_mapped_by_panther is None
+    assert report.summary.n_identifiers_mapped_reported_by_panther is None
+    assert report.summary.n_identifiers_matched_incl_suffix_rule is None
+
+
+def test_summary_counts_suffix_matches_separately():
+    accounting = _account(InputType.rsIdList, RsIdListQuery(rsIdList=["rs1"]))
+
+    # PANTHER lists HLA-B once for the two submitted identifiers.
+    report = build_input_report(accounting, ["HLA-B", "HLA-B.5"], (["HLA-B"], []))
+
+    assert report.summary.n_identifiers_mapped_reported_by_panther == 1
+    assert report.summary.n_identifiers_matched_incl_suffix_rule == 2
 
 
 def test_parse_panther_input_list():
@@ -238,7 +250,8 @@ def test_endpoint_returns_input_report(client, fake_report_services):
         for g in report["gene_identifiers"]
     ] == [("GENEA", "yes", "exact"), ("GENEB.2", "no", "version_suffix_removed")]
     assert report["summary"]["n_input"] == 3
-    assert report["summary"]["n_identifiers_mapped_by_panther"] == 1
+    assert report["summary"]["n_identifiers_mapped_reported_by_panther"] == 1
+    assert report["summary"]["n_identifiers_matched_incl_suffix_rule"] == 1
     # Existing fields are unchanged.
     assert body["rsId_genes_map"] == {"chr1:100": ["GENEA"], "chr1:200": ["GENEB.2"]}
 

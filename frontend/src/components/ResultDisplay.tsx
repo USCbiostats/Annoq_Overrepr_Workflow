@@ -817,8 +817,8 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
         >
           <Typography variant="body2">
             Gene Identifier Report
-            {inputReport?.summary.n_identifiers_mapped_by_panther != null
-              ? ` (${inputReport.summary.n_identifiers_mapped_by_panther} of ${inputReport.summary.n_identifiers_submitted} mapped by PANTHER)`
+            {inputReport?.summary.n_identifiers_matched_incl_suffix_rule != null
+              ? ` (${inputReport.summary.n_identifiers_matched_incl_suffix_rule} of ${inputReport.summary.n_identifiers_submitted} mapped by PANTHER)`
               : ""}
           </Typography>
         </MenuItem>

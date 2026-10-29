@@ -150,7 +150,10 @@ def build_input_report(
             n_no_gene=statuses.count(VariantStatus.no_gene),
             n_records_not_matched_to_input=variants.records_not_matched_to_input,
             n_identifiers_submitted=len(gene_list),
-            n_identifiers_mapped_by_panther=count("yes"),
+            n_identifiers_mapped_reported_by_panther=(
+                None if panther_input_list is None else len(panther_input_list[0])
+            ),
+            n_identifiers_matched_incl_suffix_rule=count("yes"),
             n_identifiers_not_mapped_by_panther=count("no"),
             n_identifiers_not_listed_by_panther=count("not_listed"),
         ),

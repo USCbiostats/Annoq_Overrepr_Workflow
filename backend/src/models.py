@@ -225,8 +225,20 @@ class InputReportSummary(BaseModel):
     n_identifiers_submitted: int = Field(
         ..., description="Unique gene identifiers in gene_list"
     )
-    n_identifiers_mapped_by_panther: int | None = Field(
-        ..., description="Null when no overrepresentation test was run"
+    n_identifiers_mapped_reported_by_panther: int | None = Field(
+        ...,
+        description=(
+            "Entries in PANTHER's mapped input list; null when no "
+            "overrepresentation test was run"
+        ),
+    )
+    n_identifiers_matched_incl_suffix_rule: int | None = Field(
+        ...,
+        description=(
+            "Submitted identifiers with mapped_by_panther 'yes', counting "
+            "matches after removing a '.N' suffix; null when no "
+            "overrepresentation test was run"
+        ),
     )
     n_identifiers_not_mapped_by_panther: int | None
     n_identifiers_not_listed_by_panther: int | None
