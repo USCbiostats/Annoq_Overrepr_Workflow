@@ -41,6 +41,8 @@ import {
   createGeneIdentifierReportCsv,
   createInputVariantReportCsv,
   createResultsTableData,
+  getSignificantResults,
+  isUnclassified,
   runStampLines,
   saveCsvFile,
   withRunDate,
@@ -141,13 +143,7 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
       return [];
     }
 
-    return tableData.filter((row) => {
-      if (correctionType === CorrectionType.FDR) {
-        return row.fdr !== null && row.fdr < 0.05;
-      }
-
-      return row.pValue !== null && row.pValue < 0.05;
-    });
+    return getSignificantResults(tableData, correctionType);
   }, [workflowResponse, tableData, correctionType]);
 
   const getDatasetTerms = (datasetValue: string) => {
@@ -543,17 +539,19 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
           }
 
           if (column.dataKey === "uploadCount") {
+            // UNCLASSIFIED genes are in All Mappings, not in a per-category download.
+            const rowDownloadable = downloadsReady && !isUnclassified(row);
             return (
               <TableCell
                 key={column.dataKey}
                 align="center"
                 onClick={() => {
-                  if (downloadsReady && row.mapped_ids && row.mapped_ids.length > 0) {
+                  if (rowDownloadable && row.mapped_ids && row.mapped_ids.length > 0) {
                     handleDownloadCSV(`${row.process}_gene_mappings.csv`, row.mapped_ids);
                   }
                 }}
                 sx={
-                  downloadsReady
+                  rowDownloadable
                     ? {
                         cursor: "pointer",
                         color: "primary.main",
@@ -567,7 +565,9 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
               >
                 <Tooltip
                   title={
-                    downloadsReady
+                    isUnclassified(row)
+                      ? "Genes in no category are listed in All Mappings"
+                      : downloadsReady
                       ? "Click to download mappings for this process"
                       : geneDetailsError
                       ? "Downloads are unavailable"

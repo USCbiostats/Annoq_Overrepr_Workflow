@@ -1,5 +1,33 @@
-import { GeneMappingDownloadData, InputReport, RunVersions } from "../models";
+import { CorrectionType } from "../constants";
+import {
+  GeneMappingDownloadData,
+  InputReport,
+  OverrepresentationResultItem,
+  RunVersions,
+} from "../models";
 import { parseVcfLines } from "../utils";
+
+// PANTHER reports the genes in no category as an UNCLASSIFIED row with a
+// p-value and FDR. It is not a category: it is never counted as significant
+// and has no per-category download.
+export const isUnclassified = (row: OverrepresentationResultItem): boolean =>
+  row.process === "UNCLASSIFIED";
+
+export const getSignificantResults = (
+  rows: OverrepresentationResultItem[],
+  correctionType: CorrectionType
+): OverrepresentationResultItem[] =>
+  rows.filter((row) => {
+    if (isUnclassified(row)) {
+      return false;
+    }
+
+    if (correctionType === CorrectionType.FDR) {
+      return row.fdr !== null && row.fdr < 0.05;
+    }
+
+    return row.pValue !== null && row.pValue < 0.05;
+  });
 
 const csvText = (value: string | null): string =>
   `"${(value ?? "").replace(/"/g, '""')}"`;

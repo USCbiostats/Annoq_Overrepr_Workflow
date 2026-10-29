@@ -1,5 +1,50 @@
 import { describe, expect, it } from "vitest";
-import { runStampLines, withRunDate } from "./utils";
+import { CorrectionType } from "../constants";
+import { OverrepresentationResultItem } from "../models";
+import {
+  getSignificantResults,
+  isUnclassified,
+  runStampLines,
+  withRunDate,
+} from "./utils";
+
+const term = (
+  process: string,
+  pValue: number,
+  fdr: number
+): OverrepresentationResultItem => ({
+  termId: process === "UNCLASSIFIED" ? "" : "P00000",
+  process,
+  refCount: 100,
+  uploadCount: 5,
+  expected: 1,
+  foldEnrichment: 5,
+  overUnder: "+",
+  pValue,
+  fdr,
+  mapped_ids: ["GENEA"],
+});
+
+describe("getSignificantResults", () => {
+  const rows = [
+    term("UNCLASSIFIED", 1.5e-8, 2.4e-6),
+    term("TGF-beta signaling pathway", 5.1e-6, 4.1e-4),
+    term("Wnt signaling pathway", 5.9e-3, 0.16),
+  ];
+
+  it("never counts UNCLASSIFIED as significant", () => {
+    expect(
+      getSignificantResults(rows, CorrectionType.FDR).map((row) => row.process)
+    ).toEqual(["TGF-beta signaling pathway"]);
+    expect(
+      getSignificantResults(rows, CorrectionType.NONE).map((row) => row.process)
+    ).toEqual(["TGF-beta signaling pathway", "Wnt signaling pathway"]);
+  });
+
+  it("identifies the UNCLASSIFIED row", () => {
+    expect(rows.map(isUnclassified)).toEqual([true, false, false]);
+  });
+});
 
 describe("runStampLines", () => {
   it("writes the nine header lines, unknown for missing values", () => {
