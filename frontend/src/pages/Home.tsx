@@ -29,9 +29,11 @@ import {
 } from "../apis";
 import Footer from "../components/Footer";
 import {
+  InputReport,
   WorkflowOverrepresentationResponse,
   WorkflowStreamEvent,
 } from "../models";
+import { createInputVariantReportCsv, saveCsvFile } from "../components/utils";
 import ResultDisplay from "../components/ResultDisplay";
 import { WorkflowStages, applyStageEvent } from "../workflowProgress";
 
@@ -52,6 +54,11 @@ function Home() {
     useState<InputTypes | null>(null);
   // Original VCF text of the shown results, for the input variant report.
   const [resultVcfText, setResultVcfText] = useState<string | null>(null);
+  // Input variant report of a run that found no genes, offered with the error.
+  const [noGenesReport, setNoGenesReport] = useState<{
+    report: InputReport;
+    vcfText: string | null;
+  } | null>(null);
   const [resultMappingFields, setResultMappingFields] = useState({
     input: ALL_GENE_MAPPING_FIELDS,
     reference: null as GeneMappingField[] | null,
@@ -82,6 +89,7 @@ function Home() {
 
     setIsLoading(true);
     setError(null);
+    setNoGenesReport(null);
     setSuccess(false);
     setGeneDetailsError(null);
     setDownloadsReady(false);
@@ -101,6 +109,9 @@ function Home() {
 
       if (response.gene_list.length === 0) {
         setError("No genes found. Please check your input.");
+        if (response.input_report) {
+          setNoGenesReport({ report: response.input_report, vcfText: inputVcfText });
+        }
         return false;
       }
 
@@ -450,6 +461,27 @@ function Home() {
           >
             <AlertTitle>Error</AlertTitle>
             {error}
+            {noGenesReport && (
+              <Box sx={{ mt: 1 }}>
+                <Button
+                  variant="outlined"
+                  color="inherit"
+                  size="small"
+                  onClick={() =>
+                    saveCsvFile(
+                      createInputVariantReportCsv(
+                        noGenesReport.report,
+                        noGenesReport.vcfText !== null ? "chr:pos" : "rsId",
+                        noGenesReport.vcfText
+                      ),
+                      "input_variant_report.csv"
+                    )
+                  }
+                >
+                  Download Input Variant Report
+                </Button>
+              </Box>
+            )}
           </Alert>
         )}
 

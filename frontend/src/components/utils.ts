@@ -72,6 +72,18 @@ export const createInputVariantReportCsv = (
   );
 };
 
+export const saveCsvFile = (csvContent: string, fileName: string) => {
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.setAttribute("href", url);
+  link.setAttribute("download", fileName);
+  link.style.visibility = "hidden";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+};
+
 // One row per gene identifier sent to PANTHER, with PANTHER's mapped status.
 export const createGeneIdentifierReportCsv = (report: InputReport): string =>
   [
