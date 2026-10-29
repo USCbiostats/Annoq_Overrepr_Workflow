@@ -1,4 +1,46 @@
-import { GeneMappingDownloadData } from "../models";
+import { GeneMappingDownloadData, InputReport } from "../models";
+
+const csvText = (value: string | null): string =>
+  `"${(value ?? "").replace(/"/g, '""')}"`;
+
+// "# name,value" lines with the report summary, placed above the table.
+const summaryHeaderLines = (report: InputReport): string[] =>
+  Object.entries(report.summary).map(
+    ([name, value]) => `# ${name},${value ?? ""}`
+  );
+
+// One row per submitted variant: annotated, no_record or no_gene.
+export const createInputVariantReportCsv = (
+  report: InputReport,
+  inputColumnLabel: string
+): string =>
+  [
+    ...summaryHeaderLines(report),
+    `${inputColumnLabel},variant_key,status,n_genes`,
+    ...report.variants.map((row) =>
+      [
+        csvText(row.input),
+        csvText(row.variant_key),
+        row.status,
+        row.n_genes,
+      ].join(",")
+    ),
+  ].join("\n") + "\n";
+
+// One row per gene identifier sent to PANTHER, with PANTHER's mapped status.
+export const createGeneIdentifierReportCsv = (report: InputReport): string =>
+  [
+    ...summaryHeaderLines(report),
+    "identifier,mapped_by_panther,panther_listed_as,panther_match",
+    ...(report.gene_identifiers ?? []).map((row) =>
+      [
+        csvText(row.identifier),
+        row.mapped_by_panther,
+        csvText(row.panther_listed_as),
+        row.panther_match,
+      ].join(",")
+    ),
+  ].join("\n") + "\n";
 
 // Interface for the table row structure
 export interface ResultTableRow {

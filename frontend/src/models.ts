@@ -26,9 +26,44 @@ export type OverrepresentationResultItem = {
     mapped_ids: string[];
 }
 
+export type VariantStatus = "annotated" | "no_record" | "no_gene";
+
+export type VariantReportRow = {
+    input: string; // The variant as submitted
+    variant_key: string | null; // rsId_genes_map key of the matching AnnoQ record; null for no_record
+    status: VariantStatus;
+    n_genes: number;
+}
+
+export type GeneIdentifierReportRow = {
+    identifier: string; // Gene identifier sent to PANTHER
+    mapped_by_panther: "yes" | "no" | "not_listed";
+    panther_listed_as: string | null;
+    panther_match: "exact" | "version_suffix_removed" | "not_listed";
+}
+
+export type InputReportSummary = {
+    n_input: number;
+    n_annotated: number;
+    n_no_record: number;
+    n_no_gene: number;
+    n_records_not_matched_to_input: number;
+    n_identifiers_submitted: number;
+    n_identifiers_mapped_by_panther: number | null; // null when no overrepresentation test was run
+    n_identifiers_not_mapped_by_panther: number | null;
+    n_identifiers_not_listed_by_panther: number | null;
+}
+
+export type InputReport = {
+    summary: InputReportSummary;
+    variants: VariantReportRow[];
+    gene_identifiers: GeneIdentifierReportRow[] | null;
+}
+
 export type GeneMappingResponse = {
     gene_list: string[]; // List of all genes
     rsId_genes_map: Record<string, string[]>; // Mapping of variant key (rsID or chr:pos) to genes
+    input_report?: InputReport | null; // Status of each submitted variant and gene identifier
 }
 
 export type PantherGeneInfoResponse = {

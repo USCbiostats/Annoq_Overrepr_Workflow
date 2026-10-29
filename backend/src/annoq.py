@@ -211,6 +211,13 @@ def _expand_ids_for_annoq(raw_ids: list[str]) -> list[str]:
     return expanded
 
 
+def variant_key(row: pd.Series, force_chr_pos_keys: bool = False) -> str:
+    """Key of an AnnoQ record in rsId_genes_map: chr:pos, or the rsID field."""
+    if force_chr_pos_keys:
+        return _row_to_chr_pos(row)
+    return str(row["rs_dbSNP151"]).strip()
+
+
 def get_rsid_gene_mapping(
     annoq_df: pd.DataFrame,
     force_chr_pos_keys: bool = False,
@@ -221,12 +228,7 @@ def get_rsid_gene_mapping(
     )
     gemap: dict[str, list[str]] = {}
     for _, row in annoq_df.iterrows():
-        key = ""
-        if force_chr_pos_keys:
-            key = _row_to_chr_pos(row)
-        else:
-            # Get the rsID
-            key = str(row["rs_dbSNP151"]).strip()
+        key = variant_key(row, force_chr_pos_keys)
 
         if not key:
             continue

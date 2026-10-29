@@ -36,7 +36,11 @@ import {
 import { describeGeneMappingFields } from "../utils";
 import { STAGE_LABELS, useNow } from "../workflowProgress";
 import { StageRow } from "./ProgressPanel";
-import { createResultsTableData } from "./utils";
+import {
+  createGeneIdentifierReportCsv,
+  createInputVariantReportCsv,
+  createResultsTableData,
+} from "./utils";
 
 interface ResultDisplayProps {
   workflowResponse: WorkflowOverrepresentationResponse | null;
@@ -287,19 +291,48 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
       ),
     ];
 
-    const csvContent = csvRows.join("\n");
+    saveCsvFile(csvRows.join("\n"), fileTitle ? fileTitle : "gene_mapping_results.csv");
+  };
+
+  const saveCsvFile = (csvContent: string, fileName: string) => {
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute(
-      "download",
-      fileTitle ? fileTitle : "gene_mapping_results.csv"
-    );
+    link.setAttribute("download", fileName);
     link.style.visibility = "hidden";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const inputReport = workflowResponse?.input_report ?? null;
+
+  const handleDownloadInputVariantReport = () => {
+    handleCloseDownloadMenu();
+    if (!inputReport) {
+      return;
+    }
+    setDownloadMessage(null);
+    saveCsvFile(
+      createInputVariantReportCsv(
+        inputReport,
+        inputTypeUsed === InputTypes.VCF ? "chr:pos" : "rsId"
+      ),
+      "input_variant_report.csv"
+    );
+  };
+
+  const handleDownloadGeneIdentifierReport = () => {
+    handleCloseDownloadMenu();
+    if (!inputReport) {
+      return;
+    }
+    setDownloadMessage(null);
+    saveCsvFile(
+      createGeneIdentifierReportCsv(inputReport),
+      "gene_identifier_report.csv"
+    );
   };
 
   const handleDownloadCSV = (fileTitle?: string, genesToInclude?: string[]) => {
@@ -765,6 +798,28 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
         <MenuItem onClick={handleDownloadSignificant}>
           <Typography variant="body2">
             Only Significant Mappings ({significantData.length} {datasetTermsPlural})
+          </Typography>
+        </MenuItem>
+        <MenuItem
+          onClick={handleDownloadInputVariantReport}
+          disabled={!inputReport}
+        >
+          <Typography variant="body2">
+            Input Variant Report
+            {inputReport
+              ? ` (${inputReport.summary.n_annotated} of ${inputReport.summary.n_input} annotated)`
+              : ""}
+          </Typography>
+        </MenuItem>
+        <MenuItem
+          onClick={handleDownloadGeneIdentifierReport}
+          disabled={!inputReport?.gene_identifiers}
+        >
+          <Typography variant="body2">
+            Gene Identifier Report
+            {inputReport?.summary.n_identifiers_mapped_by_panther != null
+              ? ` (${inputReport.summary.n_identifiers_mapped_by_panther} of ${inputReport.summary.n_identifiers_submitted} mapped by PANTHER)`
+              : ""}
           </Typography>
         </MenuItem>
       </Menu>
