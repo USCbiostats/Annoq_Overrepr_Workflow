@@ -25,6 +25,8 @@ ANNOQ_IDS_BATCH_SIZE = 50000
 ANNOQ_RSIDS_BATCH_SIZE = 5000
 # How long SNPWay waits for each AnnoQ request (download URL and file download).
 ANNOQ_TIMEOUT_SECONDS = 300.0
+# dbSNP build of the rsIDs: the backend reads AnnoQ's rs_dbSNP151 field.
+ANNOQ_DBSNP_RELEASE = "151"
 
 
 def _chunk_items(items: list[str], chunk_size: int) -> list[list[str]]:

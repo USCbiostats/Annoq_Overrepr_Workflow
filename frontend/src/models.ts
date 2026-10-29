@@ -76,9 +76,17 @@ export type GeneMappingDownloadData = GeneMappingResponse & PantherGeneInfoRespo
 
 export type WorkflowGeneMappingsResponse = GeneMappingDownloadData;
 
+export type RunVersions = {
+    annoq_panel: string | null; // null: not read by the backend
+    dbsnp_release: string | null;
+    panther_version: string | null; // PANTHER annot_version_release_date
+    panther_tool_release: string | null; // PANTHER tool_release_date
+}
+
 export type WorkflowOverrepresentationResponse = GeneMappingDownloadData & {
     overrepresentation_results: OverrepresentationResultItem[];
     reference_gene_list?: string[] | null; // Genes from the custom reference list; null when PANTHER's default reference was used
+    run_versions?: RunVersions | null; // AnnoQ and PANTHER versions, for stamping downloads
 }
 
 // Progress events from POST /workflow/overrepresentation/stream.

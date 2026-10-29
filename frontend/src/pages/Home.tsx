@@ -33,7 +33,13 @@ import {
   WorkflowOverrepresentationResponse,
   WorkflowStreamEvent,
 } from "../models";
-import { createInputVariantReportCsv, saveCsvFile } from "../components/utils";
+import {
+  createInputVariantReportCsv,
+  formatRunDate,
+  runStampLines,
+  saveCsvFile,
+  withRunDate,
+} from "../components/utils";
 import ResultDisplay from "../components/ResultDisplay";
 import { WorkflowStages, applyStageEvent } from "../workflowProgress";
 
@@ -58,7 +64,11 @@ function Home() {
   const [noGenesReport, setNoGenesReport] = useState<{
     report: InputReport;
     vcfText: string | null;
+    stampLines: string[];
+    runDate: string;
   } | null>(null);
+  // Date of the shown results, stamped into downloads.
+  const [resultRunDate, setResultRunDate] = useState("");
   const [resultMappingFields, setResultMappingFields] = useState({
     input: ALL_GENE_MAPPING_FIELDS,
     reference: null as GeneMappingField[] | null,
@@ -107,10 +117,23 @@ function Home() {
     const showResults = (response: WorkflowOverrepresentationResponse) => {
       setWorkflowResponse(response);
 
+      const runDate = formatRunDate(new Date());
       if (response.gene_list.length === 0) {
         setError("No genes found. Please check your input.");
         if (response.input_report) {
-          setNoGenesReport({ report: response.input_report, vcfText: inputVcfText });
+          setNoGenesReport({
+            report: response.input_report,
+            vcfText: inputVcfText,
+            stampLines: runStampLines({
+              versions: response.run_versions,
+              geneMappingFields: payload?.geneMappingFields ?? ALL_GENE_MAPPING_FIELDS,
+              testType,
+              correction,
+              runDate,
+              annotationDataset: dataset,
+            }),
+            runDate,
+          });
         }
         return false;
       }
@@ -139,6 +162,7 @@ function Home() {
 
       setResultInputType(nextResultInputType);
       setResultVcfText(inputVcfText);
+      setResultRunDate(runDate);
       setResultMappingFields({
         input: payload?.geneMappingFields ?? ALL_GENE_MAPPING_FIELDS,
         // A reference gene list is not mapped, so it has no mapping tools.
@@ -442,6 +466,8 @@ function Home() {
             submitToPanther={submitToPanther}
             annotationDataset={pantherId.dataset}
             correctionType={pantherId.correction}
+            testType={pantherId.testType}
+            runDate={resultRunDate}
             inputTypeUsed={resultInputType}
             inputVcfText={resultVcfText}
             inputMappingFields={resultMappingFields.input}
@@ -469,12 +495,15 @@ function Home() {
                   size="small"
                   onClick={() =>
                     saveCsvFile(
-                      createInputVariantReportCsv(
-                        noGenesReport.report,
-                        noGenesReport.vcfText !== null ? "chr:pos" : "rsId",
-                        noGenesReport.vcfText
-                      ),
-                      "input_variant_report.csv"
+                      [
+                        ...noGenesReport.stampLines,
+                        createInputVariantReportCsv(
+                          noGenesReport.report,
+                          noGenesReport.vcfText !== null ? "chr:pos" : "rsId",
+                          noGenesReport.vcfText
+                        ),
+                      ].join("\n"),
+                      withRunDate("input_variant_report.csv", noGenesReport.runDate)
                     )
                   }
                 >

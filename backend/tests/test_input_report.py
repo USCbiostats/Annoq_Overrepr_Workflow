@@ -219,6 +219,8 @@ def fake_report_services(main_module, monkeypatch):
             "results": {
                 "input_list": {"mapped_ids": "GENEA", "unmapped_ids": "GENEB"},
                 "result": [],
+                "tool_release_date": 20240807,
+                "annot_version_release_date": "PANTHER version 19.0 Released 2024-06-20",
             }
         }
 
@@ -254,6 +256,17 @@ def test_endpoint_returns_input_report(client, fake_report_services):
     assert report["summary"]["n_identifiers_matched_incl_suffix_rule"] == 1
     # Existing fields are unchanged.
     assert body["rsId_genes_map"] == {"chr1:100": ["GENEA"], "chr1:200": ["GENEB.2"]}
+
+
+def test_endpoint_returns_run_versions(client, fake_report_services):
+    body = client.post("/workflow/overrepresentation", json=REPORT_REQUEST).json()
+
+    assert body["run_versions"] == {
+        "annoq_panel": None,
+        "dbsnp_release": "151",
+        "panther_version": "PANTHER version 19.0 Released 2024-06-20",
+        "panther_tool_release": "20240807",
+    }
 
 
 def test_endpoint_report_respects_gene_mapping_fields(client, fake_report_services):
@@ -300,3 +313,6 @@ def test_stream_reports_inputs_when_no_genes_are_found(
     report = next(e for e in events if e["event"] == "result")["data"]["input_report"]
     assert [v["status"] for v in report["variants"]] == ["no_record"] * 3
     assert report["gene_identifiers"] == []
+    # No PANTHER call was made, so its versions are unknown.
+    run_versions = next(e for e in events if e["event"] == "result")["data"]["run_versions"]
+    assert run_versions["panther_version"] is None

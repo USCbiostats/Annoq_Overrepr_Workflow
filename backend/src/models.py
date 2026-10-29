@@ -313,6 +313,21 @@ class WorkflowOverrepresentationRequest(WorkflowInputRequest):
     )
 
 
+class RunVersions(BaseModel):
+    """Data and tool versions behind a run; null when not known."""
+
+    annoq_panel: str | None = Field(
+        ..., description="AnnoQ variant panel release (not read by the backend)"
+    )
+    dbsnp_release: str | None = Field(..., description="dbSNP build of the rsIDs")
+    panther_version: str | None = Field(
+        ..., description="PANTHER annot_version_release_date"
+    )
+    panther_tool_release: str | None = Field(
+        ..., description="PANTHER tool_release_date"
+    )
+
+
 class WorkflowOverrepresentationResponse(WorkflowGeneMappingsResponse):
     """Compact overrepresentation response used by the UI and client libraries."""
 
@@ -326,4 +341,8 @@ class WorkflowOverrepresentationResponse(WorkflowGeneMappingsResponse):
             "Genes mapped from the custom reference list, or null when the "
             "default PANTHER reference (all human genes) was used."
         ),
+    )
+    run_versions: RunVersions | None = Field(
+        default=None,
+        description="AnnoQ and PANTHER versions, for stamping downloads.",
     )

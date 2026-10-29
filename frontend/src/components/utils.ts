@@ -1,4 +1,4 @@
-import { GeneMappingDownloadData, InputReport } from "../models";
+import { GeneMappingDownloadData, InputReport, RunVersions } from "../models";
 import { parseVcfLines } from "../utils";
 
 const csvText = (value: string | null): string =>
@@ -71,6 +71,44 @@ export const createInputVariantReportCsv = (
     ].join("\n") + "\n"
   );
 };
+
+export type RunStamp = {
+  versions: RunVersions | null | undefined;
+  geneMappingFields: string[];
+  testType: string;
+  correction: string;
+  runDate: string; // YYYY-MM-DD
+  annotationDataset: string; // e.g. ANNOT_TYPE_ID_PANTHER_PATHWAY
+};
+
+// "# name,value" lines with the versions and settings of the run, placed at
+// the top of every download. Values that are not known are written as unknown.
+export const runStampLines = (stamp: RunStamp): string[] => {
+  const known = (value: string | null | undefined) => value || "unknown";
+  return [
+    `# annoq_panel,${known(stamp.versions?.annoq_panel)}`,
+    `# dbsnp_release,${known(stamp.versions?.dbsnp_release)}`,
+    `# panther_version,${known(stamp.versions?.panther_version)}`,
+    `# panther_tool_release,${known(stamp.versions?.panther_tool_release)}`,
+    `# gene_mapping_sources,${known(stamp.geneMappingFields.join(";"))}`,
+    `# test,${known(stamp.testType)}`,
+    `# correction,${known(stamp.correction)}`,
+    `# run_date,${known(stamp.runDate)}`,
+    `# annotation_dataset,${known(stamp.annotationDataset)}`,
+  ];
+};
+
+// Local date of a run as YYYY-MM-DD.
+export const formatRunDate = (date: Date): string =>
+  [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
+
+// "results.csv" -> "results_2026-10-29.csv"
+export const withRunDate = (fileName: string, runDate: string): string =>
+  runDate ? fileName.replace(/(\.csv)?$/, `_${runDate}$1`) : fileName;
 
 export const saveCsvFile = (csvContent: string, fileName: string) => {
   const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });

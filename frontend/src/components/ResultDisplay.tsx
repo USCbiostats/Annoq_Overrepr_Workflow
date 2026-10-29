@@ -32,6 +32,7 @@ import {
   Datasets,
   GeneMappingField,
   InputTypes,
+  TestType,
 } from "../constants";
 import { describeGeneMappingFields } from "../utils";
 import { STAGE_LABELS, useNow } from "../workflowProgress";
@@ -40,7 +41,9 @@ import {
   createGeneIdentifierReportCsv,
   createInputVariantReportCsv,
   createResultsTableData,
+  runStampLines,
   saveCsvFile,
+  withRunDate,
 } from "./utils";
 
 interface ResultDisplayProps {
@@ -49,6 +52,9 @@ interface ResultDisplayProps {
   submitToPanther: () => void;
   annotationDataset: string;
   correctionType: CorrectionType;
+  testType: TestType;
+  // Date of the run (YYYY-MM-DD), stamped into downloads and their file names.
+  runDate: string;
   inputTypeUsed: InputTypes | null;
   // Original VCF text (VCF input only), joined into the input variant report.
   inputVcfText: string | null;
@@ -96,6 +102,8 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
   workflowResponse,
   annotationDataset,
   correctionType,
+  testType,
+  runDate,
   resetAnalysis,
   submitToPanther,
   inputTypeUsed,
@@ -295,8 +303,20 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
       ),
     ];
 
-    saveCsvFile(csvRows.join("\n"), fileTitle ? fileTitle : "gene_mapping_results.csv");
+    saveCsvFile(
+      [...stampLines, ...csvRows].join("\n"),
+      withRunDate(fileTitle ? fileTitle : "gene_mapping_results.csv", runDate)
+    );
   };
+
+  const stampLines = runStampLines({
+    versions: workflowResponse?.run_versions,
+    geneMappingFields: inputMappingFields,
+    testType,
+    correction: correctionType,
+    runDate,
+    annotationDataset,
+  });
 
   const inputReport = workflowResponse?.input_report ?? null;
 
@@ -307,12 +327,15 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
     }
     setDownloadMessage(null);
     saveCsvFile(
-      createInputVariantReportCsv(
-        inputReport,
-        inputTypeUsed === InputTypes.VCF ? "chr:pos" : "rsId",
-        inputTypeUsed === InputTypes.VCF ? inputVcfText : null
-      ),
-      "input_variant_report.csv"
+      [
+        ...stampLines,
+        createInputVariantReportCsv(
+          inputReport,
+          inputTypeUsed === InputTypes.VCF ? "chr:pos" : "rsId",
+          inputTypeUsed === InputTypes.VCF ? inputVcfText : null
+        ),
+      ].join("\n"),
+      withRunDate("input_variant_report.csv", runDate)
     );
   };
 
@@ -323,8 +346,8 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
     }
     setDownloadMessage(null);
     saveCsvFile(
-      createGeneIdentifierReportCsv(inputReport),
-      "gene_identifier_report.csv"
+      [...stampLines, createGeneIdentifierReportCsv(inputReport)].join("\n"),
+      withRunDate("gene_identifier_report.csv", runDate)
     );
   };
 
