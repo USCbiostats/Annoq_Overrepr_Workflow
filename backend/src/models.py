@@ -64,6 +64,14 @@ class GeneMappingsResponse(BaseModel):
         ..., description="Mapping of variant key (rsID or chr:pos) to genes"
     )
 
+    rsId_gene_sources: dict[str, dict[str, list[GeneMappingField]]] = Field(
+        default_factory=dict,
+        description=(
+            "For each variant key and gene in rsId_genes_map, the selected gene "
+            "columns that produced the assignment"
+        ),
+    )
+
 
 class PantherGeneInfoRequest(BaseModel):
     """Request model for PANTHER geneinfo lookups."""

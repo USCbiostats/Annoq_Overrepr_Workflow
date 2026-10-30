@@ -256,6 +256,10 @@ def test_endpoint_returns_input_report(client, fake_report_services):
     assert report["summary"]["n_identifiers_matched_incl_suffix_rule"] == 1
     # Existing fields are unchanged.
     assert body["rsId_genes_map"] == {"chr1:100": ["GENEA"], "chr1:200": ["GENEB.2"]}
+    assert body["rsId_gene_sources"] == {
+        "chr1:100": {"GENEA": ["ANNOVAR_refseq_Gene_ID"]},
+        "chr1:200": {"GENEB.2": ["enhancer_linked_genes"]},
+    }
 
 
 def test_endpoint_returns_run_versions(client, fake_report_services):
@@ -277,6 +281,9 @@ def test_endpoint_report_respects_gene_mapping_fields(client, fake_report_servic
 
     statuses = {v["input"]: v["status"] for v in body["input_report"]["variants"]}
     assert statuses == {"1:100": "annotated", "1:200": "no_gene", "1:300": "no_record"}
+    assert body["rsId_gene_sources"] == {
+        "chr1:100": {"GENEA": ["ANNOVAR_refseq_Gene_ID"]}
+    }
 
 
 def test_gene_mappings_endpoint_report_has_no_panther_lists(
@@ -297,6 +304,9 @@ def test_stream_result_carries_input_report(client, fake_report_services):
 
     result = next(e for e in events if e["event"] == "result")["data"]
     assert result["input_report"]["summary"]["n_annotated"] == 2
+    assert result["rsId_gene_sources"]["chr1:200"] == {
+        "GENEB.2": ["enhancer_linked_genes"]
+    }
 
 
 def test_stream_reports_inputs_when_no_genes_are_found(

@@ -342,7 +342,13 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
     }
     setDownloadMessage(null);
     saveCsvFile(
-      [...stampLines, createGeneIdentifierReportCsv(inputReport)].join("\n"),
+      [
+        ...stampLines,
+        createGeneIdentifierReportCsv(
+          inputReport,
+          workflowResponse?.rsId_gene_sources
+        ),
+      ].join("\n"),
       withRunDate("gene_identifier_report.csv", runDate)
     );
   };

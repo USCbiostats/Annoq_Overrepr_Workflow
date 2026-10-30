@@ -1,6 +1,11 @@
-import { CorrectionType } from "../constants";
+import {
+  ALL_GENE_MAPPING_FIELDS,
+  CorrectionType,
+  GENE_MAPPING_SOURCE_LABELS,
+} from "../constants";
 import {
   GeneMappingDownloadData,
+  GeneSources,
   InputReport,
   OverrepresentationResultItem,
   RunVersions,
@@ -150,26 +155,68 @@ export const saveCsvFile = (csvContent: string, fileName: string) => {
   document.body.removeChild(link);
 };
 
+// Source names of these gene columns, in column order.
+const sourceLabels = (fields: Set<string>): string[] =>
+  ALL_GENE_MAPPING_FIELDS.filter((field) => fields.has(field)).map(
+    (field) => GENE_MAPPING_SOURCE_LABELS[field]
+  );
+
+// Sources that assigned any of these genes to the variant.
+export const variantGeneSources = (
+  rsIdGeneSources: GeneSources | undefined,
+  rsId: string,
+  genes: string[]
+): string[] => {
+  const perGene = rsIdGeneSources?.[rsId] ?? {};
+  return sourceLabels(new Set(genes.flatMap((gene) => perGene[gene] ?? [])));
+};
+
+// Sources of each identifier, over every variant it was assigned to.
+export const identifierSources = (
+  rsIdGeneSources: GeneSources | undefined
+): Map<string, string[]> => {
+  const fieldsByGene = new Map<string, Set<string>>();
+  for (const perGene of Object.values(rsIdGeneSources ?? {})) {
+    for (const [gene, fields] of Object.entries(perGene)) {
+      const geneFields = fieldsByGene.get(gene) ?? new Set<string>();
+      fields.forEach((field) => geneFields.add(field));
+      fieldsByGene.set(gene, geneFields);
+    }
+  }
+  return new Map(
+    [...fieldsByGene].map(([gene, fields]) => [gene, sourceLabels(fields)])
+  );
+};
+
 // One row per gene identifier sent to PANTHER, with PANTHER's mapped status.
-export const createGeneIdentifierReportCsv = (report: InputReport): string =>
-  [
-    ...summaryHeaderLines(report),
-    "identifier,mapped_by_panther,panther_listed_as,panther_match",
-    ...(report.gene_identifiers ?? []).map((row) =>
-      [
-        csvText(row.identifier),
-        row.mapped_by_panther,
-        csvText(row.panther_listed_as),
-        row.panther_match,
-      ].join(",")
-    ),
-  ].join("\n") + "\n";
+export const createGeneIdentifierReportCsv = (
+  report: InputReport,
+  rsIdGeneSources?: GeneSources
+): string => {
+  const sources = identifierSources(rsIdGeneSources);
+  return (
+    [
+      ...summaryHeaderLines(report),
+      "identifier,mapped_by_panther,panther_listed_as,panther_match,sources",
+      ...(report.gene_identifiers ?? []).map((row) =>
+        [
+          csvText(row.identifier),
+          row.mapped_by_panther,
+          csvText(row.panther_listed_as),
+          row.panther_match,
+          csvText((sources.get(row.identifier) ?? []).join(";")),
+        ].join(",")
+      ),
+    ].join("\n") + "\n"
+  );
+};
 
 // Interface for the table row structure
 export interface ResultTableRow {
   rsId: string;
   PANTHER_ID: string;
   mappedGenes: string[]; // Genes that map to both rsID and PANTHER_ID
+  sources: string[]; // Gene columns that assigned mappedGenes to rsID
   status: string; // Input variant status from the input report
   PANTHER_family: string;
   PANTHER_Subfamily: string;
@@ -193,6 +240,7 @@ const getRelevantColumns = (
     "rsId",
     "PANTHER_ID",
     "mappedGenes",
+    "sources",
     "status",
   ];
 
@@ -244,8 +292,12 @@ export const createResultsTableData = (
   pantherIdsToInclude?: string[],
   annotationDataset?: string
 ): ResultTableRow[] => {
-  const { rsId_genes_map, panther_gene_info, gene_panther_mapping } =
-    geneMappingResponse;
+  const {
+    rsId_genes_map,
+    rsId_gene_sources,
+    panther_gene_info,
+    gene_panther_mapping,
+  } = geneMappingResponse;
 
   const tableData: ResultTableRow[] = [];
   const processedPairs = new Set<string>(); // To avoid duplicate rows
@@ -290,6 +342,7 @@ export const createResultsTableData = (
             rsId,
             PANTHER_ID: pantherId,
             mappedGenes,
+            sources: variantGeneSources(rsId_gene_sources, rsId, mappedGenes),
             status: "annotated",
             PANTHER_family: geneInfo.PANTHER_family,
             PANTHER_Subfamily: geneInfo.PANTHER_Subfamily,
@@ -320,11 +373,13 @@ export const createResultsTableData = (
       const rsId = variant.variant_key ?? variant.input;
       if (variantsWithRows.has(rsId)) continue;
       variantsWithRows.add(rsId);
+      const mappedGenes =
+        variant.status === "annotated" ? rsId_genes_map[rsId] || [] : [];
       tableData.push({
         rsId,
         PANTHER_ID: "",
-        mappedGenes:
-          variant.status === "annotated" ? rsId_genes_map[rsId] || [] : [],
+        mappedGenes,
+        sources: variantGeneSources(rsId_gene_sources, rsId, mappedGenes),
         status: variant.status,
         PANTHER_family: "",
         PANTHER_Subfamily: "",

@@ -14,7 +14,12 @@ from fastapi.staticfiles import StaticFiles
 from starlette.responses import FileResponse
 
 from src.analytics import send_event
-from src.annoq import ANNOQ_DBSNP_RELEASE, get_annoq_df, get_rsid_gene_mapping
+from src.annoq import (
+    ANNOQ_DBSNP_RELEASE,
+    GeneSources,
+    get_annoq_df,
+    get_rsid_gene_mapping_with_sources,
+)
 from src.config import config
 from src.input_report import (
     VariantAccounting,
@@ -121,7 +126,7 @@ async def _run_mapping_pipeline(
     snp_list: SnpListInput,
     list_label: str = "Input",
     on_progress: ProgressCallback | None = None,
-) -> tuple[list[str], dict[str, list[str]], VariantAccounting]:
+) -> tuple[list[str], dict[str, list[str]], GeneSources, VariantAccounting]:
     query: Any = _resolve_query(snp_list)
     if query is None:
         raise HTTPException(
@@ -135,7 +140,7 @@ async def _run_mapping_pipeline(
     df = await get_annoq_df(snp_list.input_type, query, on_progress=on_progress)
     force_chr_pos_keys = snp_list.input_type == InputType.ids
 
-    rs_id_gene_mapping = get_rsid_gene_mapping(
+    rs_id_gene_mapping, rs_id_gene_sources = get_rsid_gene_mapping_with_sources(
         df,
         force_chr_pos_keys=force_chr_pos_keys,
         gene_mapping_fields=snp_list.geneMappingFields,
@@ -147,13 +152,13 @@ async def _run_mapping_pipeline(
 
     all_unique_genes = _build_unique_genes(rs_id_gene_mapping)
     _validate_panther_gene_limit(all_unique_genes, list_label)
-    return all_unique_genes, rs_id_gene_mapping, variants
+    return all_unique_genes, rs_id_gene_mapping, rs_id_gene_sources, variants
 
 
 async def _read_reference_gene_list(
     reference_list: ReferenceListInput,
     on_progress: ProgressCallback | None = None,
-) -> tuple[list[str], dict[str, list[str]], VariantAccounting]:
+) -> tuple[list[str], dict[str, list[str]], GeneSources, VariantAccounting]:
     """Use a reference gene list as it is: no AnnoQ mapping is needed."""
     if reference_list.geneListQuery is None:
         raise HTTPException(
@@ -168,7 +173,7 @@ async def _read_reference_gene_list(
     )
     _validate_panther_gene_limit(genes, "Reference list")
     report_progress(on_progress, 1, 1)
-    return genes, {}, VariantAccounting(rows=[], records_not_matched_to_input=0)
+    return genes, {}, {}, VariantAccounting(rows=[], records_not_matched_to_input=0)
 
 
 # Runs one workflow stage: run_stage(stage name, make_coro) where make_coro
@@ -198,7 +203,9 @@ async def _gather_or_cancel(*awaitables: Awaitable[Any]) -> list[Any]:
 async def _map_request_lists(
     request: WorkflowOverrepresentationRequest,
     run_stage: StageRunner = _run_untracked,
-) -> tuple[list[str], dict[str, list[str]], list[str] | None, VariantAccounting]:
+) -> tuple[
+    list[str], dict[str, list[str]], GeneSources, list[str] | None, VariantAccounting
+]:
     """Map the input list and, if given, the reference list to genes."""
     reference_list = request.referenceList
     jobs = [
@@ -224,17 +231,23 @@ async def _map_request_lists(
         )
 
     results = await _gather_or_cancel(*jobs)
-    all_unique_genes, rs_id_gene_mapping, variants = results[0]
+    all_unique_genes, rs_id_gene_mapping, rs_id_gene_sources, variants = results[0]
     if reference_list is None:
-        return all_unique_genes, rs_id_gene_mapping, None, variants
+        return all_unique_genes, rs_id_gene_mapping, rs_id_gene_sources, None, variants
 
-    reference_gene_list, _, _ = results[1]
+    reference_gene_list, _, _, _ = results[1]
     if not reference_gene_list:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="No genes found for the custom reference list.",
         )
-    return all_unique_genes, rs_id_gene_mapping, reference_gene_list, variants
+    return (
+        all_unique_genes,
+        rs_id_gene_mapping,
+        rs_id_gene_sources,
+        reference_gene_list,
+        variants,
+    )
 
 
 async def _run_overrepresentation_test(
@@ -285,9 +298,12 @@ async def workflow_gene_mappings(
     request: WorkflowInputRequest,
 ) -> WorkflowGeneMappingsResponse:
     try:
-        all_unique_genes, rs_id_gene_mapping, variants = await _run_mapping_pipeline(
-            request
-        )
+        (
+            all_unique_genes,
+            rs_id_gene_mapping,
+            rs_id_gene_sources,
+            variants,
+        ) = await _run_mapping_pipeline(request)
         # No overrepresentation test here, so no PANTHER mapped/unmapped lists.
         input_report = build_input_report(variants, all_unique_genes, None)
 
@@ -307,6 +323,7 @@ async def workflow_gene_mappings(
         return WorkflowGeneMappingsResponse(
             gene_list=all_unique_genes,
             rsId_genes_map=rs_id_gene_mapping,
+            rsId_gene_sources=rs_id_gene_sources,
             panther_gene_info=panther_gene_info_data,
             gene_panther_mapping=gene_panther_mapping_data,
             input_report=input_report,
@@ -327,6 +344,7 @@ async def workflow_overrepresentation(
         (
             all_unique_genes,
             rs_id_gene_mapping,
+            rs_id_gene_sources,
             reference_gene_list,
             variants,
         ) = await _map_request_lists(request)
@@ -354,6 +372,7 @@ async def workflow_overrepresentation(
         return WorkflowOverrepresentationResponse(
             gene_list=all_unique_genes,
             rsId_genes_map=rs_id_gene_mapping,
+            rsId_gene_sources=rs_id_gene_sources,
             panther_gene_info=panther_gene_info_data,
             gene_panther_mapping=gene_panther_mapping_data,
             overrepresentation_results=overrepresentation_results,
@@ -447,6 +466,7 @@ async def workflow_overrepresentation_stream(
             (
                 all_unique_genes,
                 rs_id_gene_mapping,
+                rs_id_gene_sources,
                 reference_gene_list,
                 variants,
             ) = await _map_request_lists(request, run_stage)
@@ -458,6 +478,7 @@ async def workflow_overrepresentation_stream(
                         "data": WorkflowOverrepresentationResponse(
                             gene_list=[],
                             rsId_genes_map=rs_id_gene_mapping,
+                            rsId_gene_sources=rs_id_gene_sources,
                             panther_gene_info={},
                             gene_panther_mapping={},
                             overrepresentation_results=[],
@@ -488,6 +509,7 @@ async def workflow_overrepresentation_stream(
                     "data": WorkflowOverrepresentationResponse(
                         gene_list=all_unique_genes,
                         rsId_genes_map=rs_id_gene_mapping,
+                        rsId_gene_sources=rs_id_gene_sources,
                         panther_gene_info={},
                         gene_panther_mapping={},
                         overrepresentation_results=overrepresentation_results,

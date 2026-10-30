@@ -61,9 +61,14 @@ export type InputReport = {
     gene_identifiers: GeneIdentifierReportRow[] | null;
 }
 
+// Variant key -> gene -> the gene columns (GeneMappingField values) that
+// assigned the gene to the variant.
+export type GeneSources = Record<string, Record<string, string[]>>;
+
 export type GeneMappingResponse = {
     gene_list: string[]; // List of all genes
     rsId_genes_map: Record<string, string[]>; // Mapping of variant key (rsID or chr:pos) to genes
+    rsId_gene_sources?: GeneSources; // Gene columns that produced each variant-gene assignment
     input_report?: InputReport | null; // Status of each submitted variant and gene identifier
 }
 

@@ -2,7 +2,7 @@ import pandas as pd
 import pytest
 from pydantic import ValidationError
 
-from src.annoq import get_rsid_gene_mapping
+from src.annoq import get_rsid_gene_mapping, get_rsid_gene_mapping_with_sources
 from src.gene_cols import ALL_GENE_MAPPING_FIELDS, GeneMappingField
 from src.models import ReferenceListInput, WorkflowInputRequest
 
@@ -76,6 +76,69 @@ def test_chr_pos_keys(annoq_df):
     )
 
     assert mapping == {"chr1:100": ["GENEA"]}
+
+
+def test_sources_of_multi_source_and_enhancer_only_genes():
+    df = pd.DataFrame(
+        [
+            _annoq_row(
+                ANNOVAR_ensembl_Gene_ID="ENSG00000000001",
+                ANNOVAR_refseq_Gene_ID="GENEA",
+                VEP_refseq_Gene_Name="GENEA",
+                enhancer_linked_genes="GENEA;GENED",
+            )
+        ]
+    )
+
+    mapping, sources = get_rsid_gene_mapping_with_sources(df)
+
+    assert sources == {
+        "rs1": {
+            "ENSG00000000001": [GeneMappingField.ANNOVAR_ensembl],
+            "GENEA": [
+                GeneMappingField.ANNOVAR_refseq,
+                GeneMappingField.VEP_refseq,
+                GeneMappingField.enhancer_linked_genes,
+            ],
+            "GENED": [GeneMappingField.enhancer_linked_genes],
+        }
+    }
+    assert mapping == get_rsid_gene_mapping(df)
+    assert sorted(sources["rs1"]) == sorted(mapping["rs1"])
+
+
+def test_sources_reflect_only_the_selected_fields(annoq_df):
+    _, sources = get_rsid_gene_mapping_with_sources(
+        annoq_df, gene_mapping_fields=[GeneMappingField.VEP_refseq]
+    )
+
+    assert sources == {"rs1": {"GENEC": [GeneMappingField.VEP_refseq]}}
+
+
+def test_sources_follow_column_order_and_merge_records_of_one_variant():
+    df = pd.DataFrame(
+        [
+            _annoq_row(enhancer_linked_genes="GENEA"),
+            _annoq_row(ANNOVAR_refseq_Gene_ID="GENEA"),
+        ]
+    )
+
+    _, sources = get_rsid_gene_mapping_with_sources(
+        df,
+        gene_mapping_fields=[
+            GeneMappingField.enhancer_linked_genes,
+            GeneMappingField.ANNOVAR_refseq,
+        ],
+    )
+
+    assert sources == {
+        "rs1": {
+            "GENEA": [
+                GeneMappingField.ANNOVAR_refseq,
+                GeneMappingField.enhancer_linked_genes,
+            ]
+        }
+    }
 
 
 def test_request_defaults_to_all_gene_mapping_fields():

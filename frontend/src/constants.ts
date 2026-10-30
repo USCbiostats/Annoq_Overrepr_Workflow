@@ -48,6 +48,17 @@ export const GENE_MAPPING_TOOLS: GeneMappingTool[] = [
 
 export const ALL_GENE_MAPPING_FIELDS: GeneMappingField[] = Object.values(GeneMappingField);
 
+// Source names used in the "sources" column of the downloads.
+export const GENE_MAPPING_SOURCE_LABELS: Record<GeneMappingField, string> = {
+    [GeneMappingField.ANNOVAR_ENSEMBL]: "ANNOVAR-Ensembl",
+    [GeneMappingField.ANNOVAR_REFSEQ]: "ANNOVAR-RefSeq",
+    [GeneMappingField.SNPEFF_ENSEMBL]: "SnpEff-Ensembl",
+    [GeneMappingField.SNPEFF_REFSEQ]: "SnpEff-RefSeq",
+    [GeneMappingField.VEP_ENSEMBL]: "VEP-Ensembl",
+    [GeneMappingField.VEP_REFSEQ]: "VEP-RefSeq",
+    [GeneMappingField.ENHANCER_LINKED_GENES]: "enhancer"
+};
+
 export enum TestType {
     FISHER = "FISHER",
     BINOMIAL = "BINOMIAL"
