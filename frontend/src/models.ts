@@ -26,9 +26,50 @@ export type OverrepresentationResultItem = {
     mapped_ids: string[];
 }
 
+export type VariantStatus = "annotated" | "no_record" | "no_gene";
+
+export type VariantReportRow = {
+    input: string; // The variant as submitted
+    variant_key: string | null; // rsId_genes_map key of the matching AnnoQ record; null for no_record
+    status: VariantStatus;
+    n_genes: number;
+}
+
+export type GeneIdentifierReportRow = {
+    identifier: string; // Gene identifier sent to PANTHER
+    mapped_by_panther: "yes" | "no" | "not_listed";
+    panther_listed_as: string | null;
+    panther_match: "exact" | "version_suffix_removed" | "not_listed";
+}
+
+export type InputReportSummary = {
+    n_input: number;
+    n_annotated: number;
+    n_no_record: number;
+    n_no_gene: number;
+    n_records_not_matched_to_input: number;
+    n_identifiers_submitted: number;
+    n_identifiers_mapped_reported_by_panther: number | null; // null when no overrepresentation test was run
+    n_identifiers_matched_incl_suffix_rule: number | null; // mapped_by_panther "yes", incl. ".N" suffix matches
+    n_identifiers_not_mapped_by_panther: number | null;
+    n_identifiers_not_listed_by_panther: number | null;
+}
+
+export type InputReport = {
+    summary: InputReportSummary;
+    variants: VariantReportRow[];
+    gene_identifiers: GeneIdentifierReportRow[] | null;
+}
+
+// Variant key -> gene -> the gene columns (GeneMappingField values) that
+// assigned the gene to the variant.
+export type GeneSources = Record<string, Record<string, string[]>>;
+
 export type GeneMappingResponse = {
     gene_list: string[]; // List of all genes
     rsId_genes_map: Record<string, string[]>; // Mapping of variant key (rsID or chr:pos) to genes
+    rsId_gene_sources?: GeneSources; // Gene columns that produced each variant-gene assignment
+    input_report?: InputReport | null; // Status of each submitted variant and gene identifier
 }
 
 export type PantherGeneInfoResponse = {
@@ -40,9 +81,17 @@ export type GeneMappingDownloadData = GeneMappingResponse & PantherGeneInfoRespo
 
 export type WorkflowGeneMappingsResponse = GeneMappingDownloadData;
 
+export type RunVersions = {
+    annoq_panel: string | null; // null: not read by the backend
+    dbsnp_release: string | null;
+    panther_version: string | null; // PANTHER annot_version_release_date
+    panther_tool_release: string | null; // PANTHER tool_release_date
+}
+
 export type WorkflowOverrepresentationResponse = GeneMappingDownloadData & {
     overrepresentation_results: OverrepresentationResultItem[];
     reference_gene_list?: string[] | null; // Genes from the custom reference list; null when PANTHER's default reference was used
+    run_versions?: RunVersions | null; // AnnoQ and PANTHER versions, for stamping downloads
 }
 
 // Progress events from POST /workflow/overrepresentation/stream.

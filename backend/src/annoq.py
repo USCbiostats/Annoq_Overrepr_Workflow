@@ -25,6 +25,10 @@ ANNOQ_IDS_BATCH_SIZE = 50000
 ANNOQ_RSIDS_BATCH_SIZE = 5000
 # How long SNPWay waits for each AnnoQ request (download URL and file download).
 ANNOQ_TIMEOUT_SECONDS = 300.0
+# dbSNP build of the rsIDs: the backend reads AnnoQ's rs_dbSNP151 field.
+ANNOQ_DBSNP_RELEASE = "151"
+# Variant key -> gene -> the gene columns that assigned the gene to the variant.
+GeneSources = dict[str, dict[str, list[GeneMappingField]]]
 
 
 def _chunk_items(items: list[str], chunk_size: int) -> list[list[str]]:
@@ -211,34 +215,55 @@ def _expand_ids_for_annoq(raw_ids: list[str]) -> list[str]:
     return expanded
 
 
+def variant_key(row: pd.Series, force_chr_pos_keys: bool = False) -> str:
+    """Key of an AnnoQ record in rsId_genes_map: chr:pos, or the rsID field."""
+    if force_chr_pos_keys:
+        return _row_to_chr_pos(row)
+    return str(row["rs_dbSNP151"]).strip()
+
+
 def get_rsid_gene_mapping(
     annoq_df: pd.DataFrame,
     force_chr_pos_keys: bool = False,
     gene_mapping_fields: list[GeneMappingField] | None = None,
 ) -> dict[str, list[str]]:
+    return get_rsid_gene_mapping_with_sources(
+        annoq_df, force_chr_pos_keys, gene_mapping_fields
+    )[0]
+
+
+def get_rsid_gene_mapping_with_sources(
+    annoq_df: pd.DataFrame,
+    force_chr_pos_keys: bool = False,
+    gene_mapping_fields: list[GeneMappingField] | None = None,
+) -> tuple[dict[str, list[str]], GeneSources]:
+    """The variant-to-genes map, and for each variant and gene the selected
+    gene columns that produced the assignment (in GENE_COLS order)."""
     selected_fields = (
         ALL_GENE_MAPPING_FIELDS if gene_mapping_fields is None else gene_mapping_fields
     )
     gemap: dict[str, list[str]] = {}
+    sources: dict[str, dict[str, set[GeneMappingField]]] = {}
     for _, row in annoq_df.iterrows():
-        key = ""
-        if force_chr_pos_keys:
-            key = _row_to_chr_pos(row)
-        else:
-            # Get the rsID
-            key = str(row["rs_dbSNP151"]).strip()
+        key = variant_key(row, force_chr_pos_keys)
 
         if not key:
             continue
 
         # Get the genes
         genes: list[str] = []
+        row_sources: dict[str, set[GeneMappingField]] = {}
         for gene_field in selected_fields:
             gene_extractor = GENE_COLS[gene_field]
             single_type_genes = gene_extractor(row[gene_field.value])
 
             # Add the genes to the set
             genes.extend(single_type_genes)
+
+            # Record the column that produced each gene
+            for gene in single_type_genes:
+                if gene.strip():
+                    row_sources.setdefault(gene.strip(), set()).add(gene_field)
 
         # Remove empty strings
         genes = [gene.strip() for gene in genes if len(gene.strip()) > 0]
@@ -252,7 +277,19 @@ def get_rsid_gene_mapping(
             gemap[key] = list(merged)
         else:
             gemap[key] = list(set(genes))
-    return gemap
+
+        key_sources = sources.setdefault(key, {})
+        for gene, fields in row_sources.items():
+            key_sources.setdefault(gene, set()).update(fields)
+
+    ordered_sources = {
+        key: {
+            gene: [field for field in GENE_COLS if field in fields]
+            for gene, fields in key_sources.items()
+        }
+        for key, key_sources in sources.items()
+    }
+    return gemap, ordered_sources
 
 
 def create_gql_query(input_type: InputType, query: Any) -> Any:

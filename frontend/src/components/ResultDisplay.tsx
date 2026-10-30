@@ -32,11 +32,21 @@ import {
   Datasets,
   GeneMappingField,
   InputTypes,
+  TestType,
 } from "../constants";
 import { describeGeneMappingFields } from "../utils";
 import { STAGE_LABELS, useNow } from "../workflowProgress";
 import { StageRow } from "./ProgressPanel";
-import { createResultsTableData } from "./utils";
+import {
+  createGeneIdentifierReportCsv,
+  createInputVariantReportCsv,
+  createResultsTableData,
+  getSignificantResults,
+  isUnclassified,
+  runStampLines,
+  saveCsvFile,
+  withRunDate,
+} from "./utils";
 
 interface ResultDisplayProps {
   workflowResponse: WorkflowOverrepresentationResponse | null;
@@ -44,7 +54,12 @@ interface ResultDisplayProps {
   submitToPanther: () => void;
   annotationDataset: string;
   correctionType: CorrectionType;
+  testType: TestType;
+  // Date of the run (YYYY-MM-DD), stamped into downloads and their file names.
+  runDate: string;
   inputTypeUsed: InputTypes | null;
+  // Original VCF text (VCF input only), joined into the input variant report.
+  inputVcfText: string | null;
   inputMappingFields: GeneMappingField[];
   referenceMappingFields: GeneMappingField[] | null;
   // Gene details for downloads arrive after the results; downloads wait for them.
@@ -89,9 +104,12 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
   workflowResponse,
   annotationDataset,
   correctionType,
+  testType,
+  runDate,
   resetAnalysis,
   submitToPanther,
   inputTypeUsed,
+  inputVcfText,
   inputMappingFields,
   referenceMappingFields,
   downloadsReady,
@@ -125,13 +143,7 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
       return [];
     }
 
-    return tableData.filter((row) => {
-      if (correctionType === CorrectionType.FDR) {
-        return row.fdr !== null && row.fdr < 0.05;
-      }
-
-      return row.pValue !== null && row.pValue < 0.05;
-    });
+    return getSignificantResults(tableData, correctionType);
   }, [workflowResponse, tableData, correctionType]);
 
   const getDatasetTerms = (datasetValue: string) => {
@@ -287,19 +299,58 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
       ),
     ];
 
-    const csvContent = csvRows.join("\n");
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute(
-      "download",
-      fileTitle ? fileTitle : "gene_mapping_results.csv"
+    saveCsvFile(
+      [...stampLines, ...csvRows].join("\n"),
+      withRunDate(fileTitle ? fileTitle : "gene_mapping_results.csv", runDate)
     );
-    link.style.visibility = "hidden";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  };
+
+  const stampLines = runStampLines({
+    versions: workflowResponse?.run_versions,
+    geneMappingFields: inputMappingFields,
+    testType,
+    correction: correctionType,
+    runDate,
+    annotationDataset,
+  });
+
+  const inputReport = workflowResponse?.input_report ?? null;
+
+  const handleDownloadInputVariantReport = () => {
+    handleCloseDownloadMenu();
+    if (!inputReport) {
+      return;
+    }
+    setDownloadMessage(null);
+    saveCsvFile(
+      [
+        ...stampLines,
+        createInputVariantReportCsv(
+          inputReport,
+          inputTypeUsed === InputTypes.VCF ? "chr:pos" : "rsId",
+          inputTypeUsed === InputTypes.VCF ? inputVcfText : null
+        ),
+      ].join("\n"),
+      withRunDate("input_variant_report.csv", runDate)
+    );
+  };
+
+  const handleDownloadGeneIdentifierReport = () => {
+    handleCloseDownloadMenu();
+    if (!inputReport) {
+      return;
+    }
+    setDownloadMessage(null);
+    saveCsvFile(
+      [
+        ...stampLines,
+        createGeneIdentifierReportCsv(
+          inputReport,
+          workflowResponse?.rsId_gene_sources
+        ),
+      ].join("\n"),
+      withRunDate("gene_identifier_report.csv", runDate)
+    );
   };
 
   const handleDownloadCSV = (fileTitle?: string, genesToInclude?: string[]) => {
@@ -494,17 +545,19 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
           }
 
           if (column.dataKey === "uploadCount") {
+            // UNCLASSIFIED genes are in All Mappings, not in a per-category download.
+            const rowDownloadable = downloadsReady && !isUnclassified(row);
             return (
               <TableCell
                 key={column.dataKey}
                 align="center"
                 onClick={() => {
-                  if (downloadsReady && row.mapped_ids && row.mapped_ids.length > 0) {
+                  if (rowDownloadable && row.mapped_ids && row.mapped_ids.length > 0) {
                     handleDownloadCSV(`${row.process}_gene_mappings.csv`, row.mapped_ids);
                   }
                 }}
                 sx={
-                  downloadsReady
+                  rowDownloadable
                     ? {
                         cursor: "pointer",
                         color: "primary.main",
@@ -518,7 +571,9 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
               >
                 <Tooltip
                   title={
-                    downloadsReady
+                    isUnclassified(row)
+                      ? "Genes in no category are listed in All Mappings"
+                      : downloadsReady
                       ? "Click to download mappings for this process"
                       : geneDetailsError
                       ? "Downloads are unavailable"
@@ -765,6 +820,28 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
         <MenuItem onClick={handleDownloadSignificant}>
           <Typography variant="body2">
             Only Significant Mappings ({significantData.length} {datasetTermsPlural})
+          </Typography>
+        </MenuItem>
+        <MenuItem
+          onClick={handleDownloadInputVariantReport}
+          disabled={!inputReport}
+        >
+          <Typography variant="body2">
+            Input Variant Report
+            {inputReport
+              ? ` (${inputReport.summary.n_annotated} of ${inputReport.summary.n_input} annotated)`
+              : ""}
+          </Typography>
+        </MenuItem>
+        <MenuItem
+          onClick={handleDownloadGeneIdentifierReport}
+          disabled={!inputReport?.gene_identifiers}
+        >
+          <Typography variant="body2">
+            Gene Identifier Report
+            {inputReport?.summary.n_identifiers_matched_incl_suffix_rule != null
+              ? ` (${inputReport.summary.n_identifiers_matched_incl_suffix_rule} of ${inputReport.summary.n_identifiers_submitted} mapped by PANTHER)`
+              : ""}
           </Typography>
         </MenuItem>
       </Menu>

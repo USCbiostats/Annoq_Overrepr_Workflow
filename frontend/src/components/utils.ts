@@ -1,10 +1,223 @@
-import { GeneMappingDownloadData } from "../models";
+import {
+  ALL_GENE_MAPPING_FIELDS,
+  CorrectionType,
+  GENE_MAPPING_SOURCE_LABELS,
+} from "../constants";
+import {
+  GeneMappingDownloadData,
+  GeneSources,
+  InputReport,
+  OverrepresentationResultItem,
+  RunVersions,
+} from "../models";
+import { parseVcfLines } from "../utils";
+
+// PANTHER reports the genes in no category as an UNCLASSIFIED row with a
+// p-value and FDR. It is not a category: it is never counted as significant
+// and has no per-category download.
+export const isUnclassified = (row: OverrepresentationResultItem): boolean =>
+  row.process === "UNCLASSIFIED";
+
+export const getSignificantResults = (
+  rows: OverrepresentationResultItem[],
+  correctionType: CorrectionType
+): OverrepresentationResultItem[] =>
+  rows.filter((row) => {
+    if (isUnclassified(row)) {
+      return false;
+    }
+
+    if (correctionType === CorrectionType.FDR) {
+      return row.fdr !== null && row.fdr < 0.05;
+    }
+
+    return row.pValue !== null && row.pValue < 0.05;
+  });
+
+const csvText = (value: string | null): string =>
+  `"${(value ?? "").replace(/"/g, '""')}"`;
+
+// "# name,value" lines with the report summary, placed above the table.
+const summaryHeaderLines = (report: InputReport): string[] =>
+  Object.entries(report.summary).map(
+    ([name, value]) => `# ${name},${value ?? ""}`
+  );
+
+// One row per submitted variant: annotated, no_record or no_gene. With the
+// original VCF text, one row per VCF data line instead: the position-level
+// status joined back to the line, and status "invalid" for lines skipped at
+// parse time.
+export const createInputVariantReportCsv = (
+  report: InputReport,
+  inputColumnLabel: string,
+  vcfText: string | null = null
+): string => {
+  if (vcfText === null) {
+    return (
+      [
+        ...summaryHeaderLines(report),
+        `${inputColumnLabel},variant_key,status,n_genes`,
+        ...report.variants.map((row) =>
+          [
+            csvText(row.input),
+            csvText(row.variant_key),
+            row.status,
+            row.n_genes,
+          ].join(",")
+        ),
+      ].join("\n") + "\n"
+    );
+  }
+
+  const variantsBySubmittedId = new Map(
+    report.variants.map((row) => [row.input, row])
+  );
+  const vcfLines = parseVcfLines(vcfText);
+  return (
+    [
+      ...summaryHeaderLines(report),
+      `# n_vcf_data_lines,${vcfLines.length}`,
+      `# n_vcf_lines_invalid,${vcfLines.filter((line) => line.submittedId === null).length}`,
+      `vcf_line,CHROM,POS,ID,REF,ALT,${inputColumnLabel},variant_key,status,n_genes`,
+      ...vcfLines.map((line) => {
+        const variant =
+          line.submittedId === null
+            ? undefined
+            : variantsBySubmittedId.get(line.submittedId);
+        const status =
+          line.submittedId === null
+            ? "invalid"
+            : variant?.status ?? "not_in_report";
+        return [
+          line.lineNumber,
+          csvText(line.chrom),
+          csvText(line.pos),
+          csvText(line.id),
+          csvText(line.ref),
+          csvText(line.alt),
+          csvText(line.submittedId),
+          csvText(variant?.variant_key ?? null),
+          status,
+          variant ? variant.n_genes : "",
+        ].join(",");
+      }),
+    ].join("\n") + "\n"
+  );
+};
+
+export type RunStamp = {
+  versions: RunVersions | null | undefined;
+  geneMappingFields: string[];
+  testType: string;
+  correction: string;
+  runDate: string; // YYYY-MM-DD
+  annotationDataset: string; // e.g. ANNOT_TYPE_ID_PANTHER_PATHWAY
+};
+
+// "# name,value" lines with the versions and settings of the run, placed at
+// the top of every download. Values that are not known are written as unknown.
+export const runStampLines = (stamp: RunStamp): string[] => {
+  const known = (value: string | null | undefined) => value || "unknown";
+  return [
+    `# annoq_panel,${known(stamp.versions?.annoq_panel)}`,
+    `# dbsnp_release,${known(stamp.versions?.dbsnp_release)}`,
+    `# panther_version,${known(stamp.versions?.panther_version)}`,
+    `# panther_tool_release,${known(stamp.versions?.panther_tool_release)}`,
+    `# gene_mapping_sources,${known(stamp.geneMappingFields.join(";"))}`,
+    `# test,${known(stamp.testType)}`,
+    `# correction,${known(stamp.correction)}`,
+    `# run_date,${known(stamp.runDate)}`,
+    `# annotation_dataset,${known(stamp.annotationDataset)}`,
+  ];
+};
+
+// Local date of a run as YYYY-MM-DD.
+export const formatRunDate = (date: Date): string =>
+  [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
+
+// "results.csv" -> "results_2026-10-29.csv"
+export const withRunDate = (fileName: string, runDate: string): string =>
+  runDate ? fileName.replace(/(\.csv)?$/, `_${runDate}$1`) : fileName;
+
+export const saveCsvFile = (csvContent: string, fileName: string) => {
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.setAttribute("href", url);
+  link.setAttribute("download", fileName);
+  link.style.visibility = "hidden";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+};
+
+// Source names of these gene columns, in column order.
+const sourceLabels = (fields: Set<string>): string[] =>
+  ALL_GENE_MAPPING_FIELDS.filter((field) => fields.has(field)).map(
+    (field) => GENE_MAPPING_SOURCE_LABELS[field]
+  );
+
+// Sources that assigned any of these genes to the variant.
+export const variantGeneSources = (
+  rsIdGeneSources: GeneSources | undefined,
+  rsId: string,
+  genes: string[]
+): string[] => {
+  const perGene = rsIdGeneSources?.[rsId] ?? {};
+  return sourceLabels(new Set(genes.flatMap((gene) => perGene[gene] ?? [])));
+};
+
+// Sources of each identifier, over every variant it was assigned to.
+export const identifierSources = (
+  rsIdGeneSources: GeneSources | undefined
+): Map<string, string[]> => {
+  const fieldsByGene = new Map<string, Set<string>>();
+  for (const perGene of Object.values(rsIdGeneSources ?? {})) {
+    for (const [gene, fields] of Object.entries(perGene)) {
+      const geneFields = fieldsByGene.get(gene) ?? new Set<string>();
+      fields.forEach((field) => geneFields.add(field));
+      fieldsByGene.set(gene, geneFields);
+    }
+  }
+  return new Map(
+    [...fieldsByGene].map(([gene, fields]) => [gene, sourceLabels(fields)])
+  );
+};
+
+// One row per gene identifier sent to PANTHER, with PANTHER's mapped status.
+export const createGeneIdentifierReportCsv = (
+  report: InputReport,
+  rsIdGeneSources?: GeneSources
+): string => {
+  const sources = identifierSources(rsIdGeneSources);
+  return (
+    [
+      ...summaryHeaderLines(report),
+      "identifier,mapped_by_panther,panther_listed_as,panther_match,sources",
+      ...(report.gene_identifiers ?? []).map((row) =>
+        [
+          csvText(row.identifier),
+          row.mapped_by_panther,
+          csvText(row.panther_listed_as),
+          row.panther_match,
+          csvText((sources.get(row.identifier) ?? []).join(";")),
+        ].join(",")
+      ),
+    ].join("\n") + "\n"
+  );
+};
 
 // Interface for the table row structure
 export interface ResultTableRow {
   rsId: string;
   PANTHER_ID: string;
   mappedGenes: string[]; // Genes that map to both rsID and PANTHER_ID
+  sources: string[]; // Gene columns that assigned mappedGenes to rsID
+  status: string; // Input variant status from the input report
   PANTHER_family: string;
   PANTHER_Subfamily: string;
   PANTHER_Pathway: string;
@@ -27,6 +240,8 @@ const getRelevantColumns = (
     "rsId",
     "PANTHER_ID",
     "mappedGenes",
+    "sources",
+    "status",
   ];
 
   if (!annotationDataset) {
@@ -77,8 +292,12 @@ export const createResultsTableData = (
   pantherIdsToInclude?: string[],
   annotationDataset?: string
 ): ResultTableRow[] => {
-  const { rsId_genes_map, panther_gene_info, gene_panther_mapping } =
-    geneMappingResponse;
+  const {
+    rsId_genes_map,
+    rsId_gene_sources,
+    panther_gene_info,
+    gene_panther_mapping,
+  } = geneMappingResponse;
 
   const tableData: ResultTableRow[] = [];
   const processedPairs = new Set<string>(); // To avoid duplicate rows
@@ -123,6 +342,8 @@ export const createResultsTableData = (
             rsId,
             PANTHER_ID: pantherId,
             mappedGenes,
+            sources: variantGeneSources(rsId_gene_sources, rsId, mappedGenes),
+            status: "annotated",
             PANTHER_family: geneInfo.PANTHER_family,
             PANTHER_Subfamily: geneInfo.PANTHER_Subfamily,
             PANTHER_Pathway: geneInfo.PANTHER_Pathway,
@@ -140,6 +361,38 @@ export const createResultsTableData = (
           });
         }
       }
+    }
+  }
+
+  // The full download has a row for every input variant: no_record and
+  // no_gene variants, and annotated variants with no PANTHER row, appear
+  // with empty PANTHER fields.
+  if (!pantherIdsSet && geneMappingResponse.input_report) {
+    const variantsWithRows = new Set(tableData.map((row) => row.rsId));
+    for (const variant of geneMappingResponse.input_report.variants) {
+      const rsId = variant.variant_key ?? variant.input;
+      if (variantsWithRows.has(rsId)) continue;
+      variantsWithRows.add(rsId);
+      const mappedGenes =
+        variant.status === "annotated" ? rsId_genes_map[rsId] || [] : [];
+      tableData.push({
+        rsId,
+        PANTHER_ID: "",
+        mappedGenes,
+        sources: variantGeneSources(rsId_gene_sources, rsId, mappedGenes),
+        status: variant.status,
+        PANTHER_family: "",
+        PANTHER_Subfamily: "",
+        PANTHER_Pathway: "",
+        Protein_Class: "",
+        Reactome_Pathway: "",
+        GO_database_MF_complete: "",
+        GO_database_BP_complete: "",
+        GO_database_CC_complete: "",
+        PANTHER_GO_slim_Molecular_Function: "",
+        PANTHER_GO_slim_Biological_Process: "",
+        PANTHER_GO_slim_Cellular_Component: "",
+      });
     }
   }
 

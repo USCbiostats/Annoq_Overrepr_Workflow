@@ -83,7 +83,10 @@ export type TestInputsProps = {
     payload: any,
     dataset: string,
     testType: TestType,
-    correction: CorrectionType
+    correction: CorrectionType,
+    // Original VCF text, kept in the browser for the input variant report;
+    // null for rsID input.
+    inputVcfText: string | null
   ) => void;
   onReset: () => void;
   isLoading: boolean;
@@ -163,7 +166,13 @@ const TestInputs: React.FC<TestInputsProps> = ({
     setInputError(null);
     try {
       const data = query_data();
-      onRunTest(data, annotDataSet, testType, correction);
+      onRunTest(
+        data,
+        annotDataSet,
+        testType,
+        correction,
+        inputType === InputTypes.VCF ? inputText : null
+      );
     } catch (error) {
       setInputError((error as Error).message);
     }
