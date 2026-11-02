@@ -404,6 +404,14 @@ const TestInputs: React.FC<TestInputsProps> = ({
                 </Stack>
               </Collapse>
 
+              <Typography variant="body2" color="text.secondary">
+                SNPWay is intended for predefined variant lists (lead SNPs,
+                curated panels, credible sets) on GRCh37/hg19. For GWAS-derived
+                inputs, provide LD-pruned or otherwise independent variants;
+                correlated variants can give individual loci disproportionate
+                weight in the enrichment test.
+              </Typography>
+
               <Stack alignItems={"start"} direction="row" spacing={2}>
                 <Button
                   variant="contained"
