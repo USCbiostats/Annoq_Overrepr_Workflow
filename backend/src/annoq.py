@@ -9,7 +9,8 @@ from src.config import config
 from src.gene_cols import (
     ALL_GENE_MAPPING_FIELDS,
     ANNOQ_DOWNLOAD_COLUMN_NAMES,
-    ANNOTATORS,
+    ANNOTATION_TOOLS,
+    ENHANCER_LINKS,
     FALLBACK_FOR,
     GENE_COLS,
     GeneColumn,
@@ -44,7 +45,7 @@ ANNOQ_METADATA_TIMEOUT_SECONDS = 30.0
 # None/empty until then or if that request failed (downloads then say "unknown").
 # AnnoQ variant panel release, e.g. "HRC.r1-1".
 annoq_panel_release: str | None = None
-# Annotation tool -> version, e.g. {"SnpEff": "4.3t"}.
+# Annotation tool or resource -> version, e.g. {"SnpEff": "4.3t"}.
 annotator_versions: dict[str, str] = {}
 # Variant key -> gene -> the gene columns that assigned the gene to the variant.
 GeneSources = dict[str, dict[str, list[GeneColumn]]]
@@ -421,14 +422,22 @@ def parse_annoq_panel_release(metadata: Any) -> str | None:
 
 
 def parse_annotator_versions(metadata: Any) -> dict[str, str]:
-    """Annotation tool versions from AnnoQ's /annotations metadata: the version
-    of each tool's top-level entry, e.g. {"SnpEff": "4.3t"}."""
+    """Versions from AnnoQ's /annotations metadata: each annotation tool's
+    top-level entry (e.g. {"SnpEff": "4.3t"}), and for the PEREGRINE enhancer
+    links the enhancer_linked_genes field, else its parent entry, which is where
+    AnnoQ states it (e.g. "Initial Release")."""
     versions: dict[str, str] = {}
     try:
+        entries = {str(field.get("id")): field for field in metadata["results"]}
         for field in metadata["results"]:
             name = field.get("name")
-            if name in ANNOTATORS and not field.get("leaf") and field.get("version"):
+            if name in ANNOTATION_TOOLS and not field.get("leaf") and field.get("version"):
                 versions[name] = str(field["version"])
+            if field.get("api_field") == "enhancer_linked_genes":
+                parent = entries.get(str(field.get("parent_id")), {})
+                version = field.get("version") or parent.get("version")
+                if version:
+                    versions[ENHANCER_LINKS] = str(version)
     except (KeyError, TypeError, AttributeError):
         pass
     return versions

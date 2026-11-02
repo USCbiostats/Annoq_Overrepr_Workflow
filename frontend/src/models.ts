@@ -86,8 +86,9 @@ export type RunVersions = {
     genome_build?: string;
     annoq_panel: string | null; // null: AnnoQ's metadata could not be read at backend startup
     dbsnp_release: string | null;
-    // Only the annotation tools (ANNOVAR, SnpEff, VEP) behind the run's gene
-    // mapping sources; null: AnnoQ's metadata could not be read at backend startup
+    // Only the annotation tools (ANNOVAR, SnpEff, VEP) and PEREGRINE enhancer links
+    // behind the run's gene mapping sources; null: AnnoQ's metadata could not be
+    // read at backend startup
     annotator_versions?: Record<string, string | null>;
     panther_version: string | null; // PANTHER annot_version_release_date
     panther_tool_release: string | null; // PANTHER tool_release_date

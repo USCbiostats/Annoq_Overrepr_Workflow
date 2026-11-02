@@ -271,7 +271,12 @@ def test_endpoint_returns_run_versions(client, fake_report_services):
         "annoq_panel": None,
         "dbsnp_release": "151",
         # Default sources (all); AnnoQ metadata not read in this test.
-        "annotator_versions": {"ANNOVAR": None, "SnpEff": None, "VEP": None},
+        "annotator_versions": {
+            "ANNOVAR": None,
+            "SnpEff": None,
+            "VEP": None,
+            "PEREGRINE": None,
+        },
         "panther_version": "PANTHER version 19.0 Released 2024-06-20",
         "panther_tool_release": "20240807",
     }

@@ -64,7 +64,7 @@ describe("runStampLines", () => {
           genome_build: "GRCh37/hg19",
           annoq_panel: null,
           dbsnp_release: "151",
-          annotator_versions: { ANNOVAR: "6/7/2020 23:56", VEP: null },
+          annotator_versions: { ANNOVAR: "6/7/2020 23:56", VEP: null, PEREGRINE: null },
           panther_version: "PANTHER version 19.0 Released 2024-06-20",
           panther_tool_release: "20240807",
         },
@@ -81,6 +81,7 @@ describe("runStampLines", () => {
       "# dbsnp_release,151",
       "# annovar_version,6/7/2020 23:56",
       "# vep_version,unknown",
+      "# peregrine_version,unknown",
       "# panther_version,PANTHER version 19.0 Released 2024-06-20",
       "# panther_tool_release,20240807",
       "# gene_mapping_sources,ANNOVAR_ensembl_Gene_ID;ANNOVAR_ensembl_Closest_gene;enhancer_linked_genes",
@@ -109,18 +110,28 @@ describe("runStampLines annotator versions", () => {
       correction: "FDR",
       runDate: "2026-11-02",
       annotationDataset: "ANNOT_TYPE_ID_PANTHER_PATHWAY",
-    }).filter((line) => /^# (annovar|snpeff|vep)_version,/.test(line));
+    }).filter((line) => /^# (annovar|snpeff|vep|peregrine)_version,/.test(line));
 
   it("writes a line only for each tool the backend lists", () => {
     expect(
-      stamp({ ANNOVAR: "6/7/2020 23:56", SnpEff: "4.3t", VEP: "ensembl-vep-release-107" })
+      stamp({
+        ANNOVAR: "6/7/2020 23:56",
+        SnpEff: "4.3t",
+        VEP: "ensembl-vep-release-107",
+        PEREGRINE: "Initial Release",
+      })
     ).toEqual([
       "# annovar_version,6/7/2020 23:56",
       "# snpeff_version,4.3t",
       "# vep_version,ensembl-vep-release-107",
+      "# peregrine_version,Initial Release",
     ]);
     expect(stamp({ SnpEff: "4.3t" })).toEqual(["# snpeff_version,4.3t"]);
-    expect(stamp({})).toEqual([]); // enhancer-only run
+    // enhancer-only run
+    expect(stamp({ PEREGRINE: "Initial Release" })).toEqual([
+      "# peregrine_version,Initial Release",
+    ]);
+    expect(stamp({})).toEqual([]);
   });
 });
 

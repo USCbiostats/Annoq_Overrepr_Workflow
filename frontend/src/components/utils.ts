@@ -134,7 +134,7 @@ export const runStampLines = (stamp: RunStamp): string[] => {
     stamp.correction === CorrectionType.NONE
       ? NO_CORRECTION_STAMP
       : known(stamp.correction);
-  // One line per annotation tool the run used, as listed by the backend.
+  // One line per annotation tool or resource the run used, as listed by the backend.
   const annotatorLines = Object.entries(
     stamp.versions?.annotator_versions ?? {}
   ).map(([tool, version]) => `# ${tool.toLowerCase()}_version,${known(version)}`);

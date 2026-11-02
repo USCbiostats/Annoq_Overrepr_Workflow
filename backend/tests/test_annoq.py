@@ -168,10 +168,13 @@ def test_download_data_reports_annoq_status(monkeypatch):
 
 
 # Shape of AnnoQ's /annotations metadata: the variant fields carry the panel
-# release and each tool's top-level entry carries the tool version.
+# release, each tool's top-level entry carries the tool version, and the
+# enhancer_linked_genes field's parent entry carries the PEREGRINE release.
 ANNOQ_METADATA = {
     "results": [
         {"id": "1", "parent_id": "0", "leaf": False, "name": "Basic Info", "version": None},
+        {"id": "7", "parent_id": "0", "leaf": False, "name": "IMAGE Enhancer Linked Functional Annotations", "version": "Initial Release"},
+        {"id": "24", "parent_id": "7", "leaf": True, "name": "enhancer_linked_genes", "api_field": "enhancer_linked_genes", "version": None},
         {"id": "2", "parent_id": "1", "leaf": True, "name": "chr", "api_field": "chr", "version": "HRC.r1-1"},
         {"id": "6", "parent_id": "1", "leaf": True, "name": "rs_dbSNP151", "api_field": "rs_dbSNP151", "version": "HRC.r1-1"},
         {"id": "26", "parent_id": "0", "leaf": False, "name": "ANNOVAR", "version": "6/7/2020 23:56"},
@@ -214,6 +217,7 @@ def test_startup_reads_annoq_panel_release(main_module, monkeypatch):
         "ANNOVAR": "6/7/2020 23:56",
         "SnpEff": "4.3t",
         "VEP": "ensembl-vep-release-107",
+        "PEREGRINE": "Initial Release",
     }
     assert requested == ["http://annoq.test/annotations"]
 
@@ -221,12 +225,13 @@ def test_startup_reads_annoq_panel_release(main_module, monkeypatch):
 @pytest.mark.parametrize(
     "fields, reference_fields, expected",
     [
-        (ALL_FIELDS, None, ["ANNOVAR", "SnpEff", "VEP"]),
+        (ALL_FIELDS, None, ["ANNOVAR", "SnpEff", "VEP", "PEREGRINE"]),
         (["ANNOVAR_refseq_Gene_ID"], None, ["ANNOVAR"]),
-        (["VEP_refseq_Gene_Name", "enhancer_linked_genes"], None, ["VEP"]),
-        (["enhancer_linked_genes"], None, []),
+        (["VEP_refseq_Gene_Name", "enhancer_linked_genes"], None, ["VEP", "PEREGRINE"]),
+        (["enhancer_linked_genes"], None, ["PEREGRINE"]),
         # A SNP reference list adds the tools behind its own sources.
-        (["enhancer_linked_genes"], ["SnpEff_ensembl_Gene_ID"], ["SnpEff"]),
+        (["enhancer_linked_genes"], ["SnpEff_ensembl_Gene_ID"], ["SnpEff", "PEREGRINE"]),
+        (["SnpEff_refseq_Gene_ID"], ["enhancer_linked_genes"], ["SnpEff", "PEREGRINE"]),
     ],
 )
 def test_run_versions_list_only_the_tools_used(
@@ -259,6 +264,19 @@ def test_run_versions_unknown_when_metadata_failed(main_module, monkeypatch):
 
     asyncio.run(annoq.load_annoq_metadata())
 
-    versions = main_module._run_versions(_overrep_request(["VEP_ensembl_Gene_ID"]))
+    versions = main_module._run_versions(
+        _overrep_request(["VEP_ensembl_Gene_ID", "enhancer_linked_genes"])
+    )
     assert versions.annoq_panel is None
-    assert versions.annotator_versions == {"VEP": None}
+    assert versions.annotator_versions == {"VEP": None, "PEREGRINE": None}
+
+
+def test_peregrine_version_prefers_the_field_version():
+    metadata = {
+        "results": [
+            {"id": "7", "parent_id": "0", "leaf": False, "name": "IMAGE Enhancer Linked Functional Annotations", "version": "Initial Release"},
+            {"id": "24", "parent_id": "7", "leaf": True, "name": "enhancer_linked_genes", "api_field": "enhancer_linked_genes", "version": "v2"},
+        ]
+    }
+
+    assert annoq.parse_annotator_versions(metadata) == {"PEREGRINE": "v2"}

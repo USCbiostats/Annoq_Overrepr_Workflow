@@ -339,10 +339,10 @@ class RunVersions(BaseModel):
     annotator_versions: dict[str, str | None] = Field(
         ...,
         description=(
-            "Version of each annotation tool (ANNOVAR, SnpEff, VEP) behind the "
-            "gene mapping sources of the input and any SNP reference list, from "
-            "AnnoQ's /annotations metadata; only the tools used; null for a tool "
-            "if that request failed"
+            "Version of each annotation tool (ANNOVAR, SnpEff, VEP) and of the "
+            "PEREGRINE enhancer links behind the gene mapping sources of the "
+            "input and any SNP reference list, from AnnoQ's /annotations "
+            "metadata; only those used; null for one if that request failed"
         ),
     )
     panther_version: str | None = Field(
