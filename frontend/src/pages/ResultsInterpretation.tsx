@@ -34,7 +34,7 @@ const ResultsInterpretation: React.FC = () => {
             1. The first column contains the name of the annotation data category, such as PANTHER GO-slim, GO or PANTHER pathway. If you are doing this analysis in terms of pathways, you can click on the pathway name to view the corresponding pathway diagram.
           </Typography>
           <Typography variant="body1" sx={{ mt: 1 }}>
-            2. The second column contains the number of genes in the reference list that map to this particular annotation data category.
+            2. The second column contains the number of genes in the reference list that map to this particular annotation data category. The reference list is all human genes, unless a custom reference list was provided under advanced options.
           </Typography>
           <Typography variant="body1" sx={{ mt: 1 }}>
             3. The third column contains the number of genes in your uploaded list that map to this annotation data category.

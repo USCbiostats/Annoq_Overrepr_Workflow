@@ -22,7 +22,9 @@ function App() {
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <Routes>
-        <Route path="/" element={<Home />} />
+        {/* A new key on every navigation to "/" (Home link, logo) remounts the
+            page, so it always opens on the landing page with a reset form. */}
+        <Route path="/" element={<Home key={location.key} />} />
         <Route path="/about" element={<About />} />
         <Route path="/tutorial" element={<Tutorial />} />
         <Route

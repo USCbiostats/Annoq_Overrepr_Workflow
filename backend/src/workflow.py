@@ -7,6 +7,11 @@ import httpx
 from src.models import OverrepresentationResultItem
 
 PANTHER_OVERREP_URL = "https://pantherdb.org/services/oai/pantherdb/enrich/overrep"
+HUMAN_TAXON_ID = "9606"
+
+
+class PantherInputError(Exception):
+    """PANTHER answered but could not process the submitted gene lists."""
 
 
 def _to_float(value: Any, default: float = 0.0) -> float:
@@ -52,6 +57,7 @@ async def get_overrepresentation(
     annot_data_set: str,
     correction: str,
     enrichment_test_type: str,
+    ref_gene_list: list[str] | None = None,
 ) -> dict[str, Any]:
     if not gene_list:
         return {"results": {"result": []}}
@@ -59,13 +65,18 @@ async def get_overrepresentation(
     payload = {
         "geneInputList": ",".join(gene_list),
         "annotDataSet": annot_data_set,
-        "organism": "9606",
+        "organism": HUMAN_TAXON_ID,
         "mappedInfo": "COMP_LIST",
         "correction": correction,
         "enrichmentTestType": enrichment_test_type,
     }
 
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    # Without a reference list PANTHER uses all genes of the organism.
+    if ref_gene_list:
+        payload["refInputList"] = ",".join(ref_gene_list)
+        payload["refOrganism"] = HUMAN_TAXON_ID
+
+    async with httpx.AsyncClient(timeout=180.0) as client:
         try:
             response = await client.post(
                 PANTHER_OVERREP_URL,
@@ -94,7 +105,7 @@ async def get_overrepresentation(
     if isinstance(data, dict):
         search_block = data.get("search")
         if isinstance(search_block, dict) and search_block.get("error"):
-            raise RuntimeError(
+            raise PantherInputError(
                 f"PANTHER overrepresentation error: {search_block['error']}"
             )
 

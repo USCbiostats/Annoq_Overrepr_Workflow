@@ -25,8 +25,17 @@ import { TableVirtuoso, TableComponents } from "react-virtuoso";
 import {
   OverrepresentationResultItem,
   WorkflowOverrepresentationResponse,
+  WorkflowStageProgress,
 } from "../models";
-import { CorrectionType, Datasets, InputTypes } from "../constants";
+import {
+  CorrectionType,
+  Datasets,
+  GeneMappingField,
+  InputTypes,
+} from "../constants";
+import { describeGeneMappingFields } from "../utils";
+import { STAGE_LABELS, useNow } from "../workflowProgress";
+import { StageRow } from "./ProgressPanel";
 import { createResultsTableData } from "./utils";
 
 interface ResultDisplayProps {
@@ -36,7 +45,15 @@ interface ResultDisplayProps {
   annotationDataset: string;
   correctionType: CorrectionType;
   inputTypeUsed: InputTypes | null;
+  inputMappingFields: GeneMappingField[];
+  referenceMappingFields: GeneMappingField[] | null;
+  // Gene details for downloads arrive after the results; downloads wait for them.
+  downloadsReady: boolean;
+  geneDetailsProgress: WorkflowStageProgress | null;
+  geneDetailsError: string | null;
 }
+
+const DOWNLOAD_PENDING_MESSAGE = "Download data is still being prepared";
 
 interface ColumnData {
   dataKey: keyof OverrepresentationResultItem;
@@ -75,7 +92,15 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
   resetAnalysis,
   submitToPanther,
   inputTypeUsed,
+  inputMappingFields,
+  referenceMappingFields,
+  downloadsReady,
+  geneDetailsProgress,
+  geneDetailsError,
 }) => {
+  const preparingDownloads = !downloadsReady && !geneDetailsError;
+  const now = useNow(preparingDownloads);
+  const [mappingStatusDismissed, setMappingStatusDismissed] = useState(false);
   const [showAllResults, setShowAllResults] = useState(false);
   const [sortBy, setSortBy] = useState<keyof OverrepresentationResultItem>(
     "process"
@@ -474,20 +499,32 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
                 key={column.dataKey}
                 align="center"
                 onClick={() => {
-                  if (row.mapped_ids && row.mapped_ids.length > 0) {
+                  if (downloadsReady && row.mapped_ids && row.mapped_ids.length > 0) {
                     handleDownloadCSV(`${row.process}_gene_mappings.csv`, row.mapped_ids);
                   }
                 }}
-                sx={{
-                  cursor: "pointer",
-                  color: "primary.main",
-                  "&:hover": {
-                    textDecoration: "underline",
-                    fontWeight: "bold",
-                  },
-                }}
+                sx={
+                  downloadsReady
+                    ? {
+                        cursor: "pointer",
+                        color: "primary.main",
+                        "&:hover": {
+                          textDecoration: "underline",
+                          fontWeight: "bold",
+                        },
+                      }
+                    : { cursor: "default" }
+                }
               >
-                <Tooltip title="Click to download mappings for this process">
+                <Tooltip
+                  title={
+                    downloadsReady
+                      ? "Click to download mappings for this process"
+                      : geneDetailsError
+                      ? "Downloads are unavailable"
+                      : DOWNLOAD_PENDING_MESSAGE
+                  }
+                >
                   {content as any}
                 </Tooltip>
               </TableCell>
@@ -544,6 +581,20 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
             {" | "}
             {correctionLabel} correction
           </Typography>
+          <Typography variant="body2" color="text.secondary">
+            SNP to gene mapping annotation tools: {describeGeneMappingFields(inputMappingFields)}
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Reference list:{" "}
+            {!workflowResponse?.reference_gene_list?.length
+              ? "All human genes (PANTHER default)"
+              : referenceMappingFields === null
+              ? // A gene list reference is not mapped through AnnoQ.
+                `Custom gene list (${workflowResponse.reference_gene_list.length.toLocaleString()} genes)`
+              : `Custom (${workflowResponse.reference_gene_list.length.toLocaleString()} genes; mapping tools: ${describeGeneMappingFields(
+                  referenceMappingFields
+                )})`}
+          </Typography>
         </Box>
         <Box>
           <Button
@@ -555,23 +606,86 @@ const ResultDisplay: React.FC<ResultDisplayProps> = ({
             Back to input
           </Button>
 
-          <Button
-            variant="outlined"
-            color="primary"
-            onClick={handleOpenDownloadMenu}
-            disabled={!workflowResponse}
-            startIcon={<DownloadIcon />}
-            endIcon={<KeyboardArrowDownIcon />}
-            sx={{ mr: 1 }}
+          <Tooltip
+            title={
+              downloadsReady
+                ? ""
+                : geneDetailsError
+                ? "Downloads are unavailable"
+                : DOWNLOAD_PENDING_MESSAGE
+            }
           >
-            Download
-          </Button>
+            {/* span keeps the tooltip working while the button is disabled */}
+            <span>
+              <Button
+                variant="outlined"
+                color="primary"
+                onClick={handleOpenDownloadMenu}
+                disabled={!workflowResponse || !downloadsReady}
+                startIcon={<DownloadIcon />}
+                endIcon={<KeyboardArrowDownIcon />}
+                sx={{ mr: 1 }}
+              >
+                Download
+              </Button>
+            </span>
+          </Tooltip>
 
           <Button variant="contained" color="primary" onClick={submitToPanther}>
             View full results in PANTHER
           </Button>
         </Box>
       </Box>
+
+      {preparingDownloads && (
+        <Alert severity="info" icon={false} sx={{ mb: 2, "& .MuiAlert-message": { width: "100%" } }}>
+          <Typography variant="body2" sx={{ mb: 1 }}>
+            Results are ready. Download data is still being prepared; the
+            Download options switch on when it finishes.
+          </Typography>
+          {geneDetailsProgress && (
+            <StageRow
+              label={STAGE_LABELS.gene_details}
+              stage={geneDetailsProgress}
+              now={now}
+            />
+          )}
+        </Alert>
+      )}
+
+      {downloadsReady && geneDetailsProgress && !mappingStatusDismissed && (
+        <Alert
+          severity="success"
+          icon={false}
+          sx={{ mb: 2, "& .MuiAlert-message": { width: "100%" } }}
+          onClose={() => setMappingStatusDismissed(true)}
+        >
+          <Typography variant="body2" sx={{ mb: 1 }}>
+            PANTHER gene mapping is complete. Downloads are available.
+          </Typography>
+          <StageRow
+            label={STAGE_LABELS.gene_details}
+            stage={geneDetailsProgress}
+            now={now}
+          />
+        </Alert>
+      )}
+
+      {geneDetailsError && (
+        <Alert severity="warning" sx={{ mb: 2, "& .MuiAlert-message": { width: "100%" } }}>
+          <Typography variant="body2" sx={{ mb: geneDetailsProgress ? 1 : 0 }}>
+            Downloads are unavailable because PANTHER gene mapping failed:{" "}
+            {geneDetailsError}
+          </Typography>
+          {geneDetailsProgress && (
+            <StageRow
+              label={STAGE_LABELS.gene_details}
+              stage={geneDetailsProgress}
+              now={now}
+            />
+          )}
+        </Alert>
+      )}
 
       {downloadMessage && (
         <Alert

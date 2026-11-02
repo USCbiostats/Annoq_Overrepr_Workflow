@@ -26,5 +26,20 @@ pip install -r requirements.txt
 To run the API, use the following command:
 
 ```bash
-uvicorn main:app
+python main.py
+```
+
+It listens on `PORT` from `.env` (see `.env.example`), or 8002 when `PORT` is not set. To choose the port on the command line instead, run uvicorn directly; `--port` overrides `PORT`:
+
+```bash
+uvicorn main:app --port 8002 --reload
+```
+
+## Running the tests
+
+Install the development dependencies and run pytest from the `backend` folder. The tests do not call AnnoQ or PANTHER.
+
+```bash
+pip install -r requirements-dev.txt
+pytest
 ```
