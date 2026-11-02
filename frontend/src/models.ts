@@ -82,8 +82,13 @@ export type GeneMappingDownloadData = GeneMappingResponse & PantherGeneInfoRespo
 export type WorkflowGeneMappingsResponse = GeneMappingDownloadData;
 
 export type RunVersions = {
+    snpway_version?: string;
+    genome_build?: string;
     annoq_panel: string | null; // null: AnnoQ's metadata could not be read at backend startup
     dbsnp_release: string | null;
+    // Only the annotation tools (ANNOVAR, SnpEff, VEP) behind the run's gene
+    // mapping sources; null: AnnoQ's metadata could not be read at backend startup
+    annotator_versions?: Record<string, string | null>;
     panther_version: string | null; // PANTHER annot_version_release_date
     panther_tool_release: string | null; // PANTHER tool_release_date
 }
@@ -91,7 +96,7 @@ export type RunVersions = {
 export type WorkflowOverrepresentationResponse = GeneMappingDownloadData & {
     overrepresentation_results: OverrepresentationResultItem[];
     reference_gene_list?: string[] | null; // Genes from the custom reference list; null when PANTHER's default reference was used
-    run_versions?: RunVersions | null; // AnnoQ and PANTHER versions, for stamping downloads
+    run_versions?: RunVersions | null; // SNPWay, AnnoQ and PANTHER versions, for stamping downloads
 }
 
 // Progress events from POST /workflow/overrepresentation/stream.

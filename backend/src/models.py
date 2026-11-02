@@ -324,6 +324,10 @@ class WorkflowOverrepresentationRequest(WorkflowInputRequest):
 class RunVersions(BaseModel):
     """Data and tool versions behind a run; null when not known."""
 
+    snpway_version: str = Field(..., description="SNPWay release that ran the analysis")
+    genome_build: str = Field(
+        ..., description="Genome build of AnnoQ's variant coordinates"
+    )
     annoq_panel: str | None = Field(
         ...,
         description=(
@@ -332,6 +336,15 @@ class RunVersions(BaseModel):
         ),
     )
     dbsnp_release: str | None = Field(..., description="dbSNP build of the rsIDs")
+    annotator_versions: dict[str, str | None] = Field(
+        ...,
+        description=(
+            "Version of each annotation tool (ANNOVAR, SnpEff, VEP) behind the "
+            "gene mapping sources of the input and any SNP reference list, from "
+            "AnnoQ's /annotations metadata; only the tools used; null for a tool "
+            "if that request failed"
+        ),
+    )
     panther_version: str | None = Field(
         ..., description="PANTHER annot_version_release_date"
     )
@@ -356,5 +369,5 @@ class WorkflowOverrepresentationResponse(WorkflowGeneMappingsResponse):
     )
     run_versions: RunVersions | None = Field(
         default=None,
-        description="AnnoQ and PANTHER versions, for stamping downloads.",
+        description="SNPWay, AnnoQ and PANTHER versions, for stamping downloads.",
     )

@@ -56,12 +56,15 @@ describe("getSignificantResults", () => {
 });
 
 describe("runStampLines", () => {
-  it("writes the nine header lines, unknown for missing values", () => {
+  it("writes the header lines, unknown for missing values", () => {
     expect(
       runStampLines({
         versions: {
+          snpway_version: "1.1.0",
+          genome_build: "GRCh37/hg19",
           annoq_panel: null,
           dbsnp_release: "151",
+          annotator_versions: { ANNOVAR: "6/7/2020 23:56", VEP: null },
           panther_version: "PANTHER version 19.0 Released 2024-06-20",
           panther_tool_release: "20240807",
         },
@@ -72,8 +75,12 @@ describe("runStampLines", () => {
         annotationDataset: "ANNOT_TYPE_ID_PANTHER_PATHWAY",
       })
     ).toEqual([
+      "# snpway_version,1.1.0",
+      "# genome_build,GRCh37/hg19",
       "# annoq_panel,unknown",
       "# dbsnp_release,151",
+      "# annovar_version,6/7/2020 23:56",
+      "# vep_version,unknown",
       "# panther_version,PANTHER version 19.0 Released 2024-06-20",
       "# panther_tool_release,20240807",
       "# gene_mapping_sources,ANNOVAR_ensembl_Gene_ID;ANNOVAR_ensembl_Closest_gene;enhancer_linked_genes",
@@ -82,6 +89,38 @@ describe("runStampLines", () => {
       "# run_date,2026-10-29",
       "# annotation_dataset,ANNOT_TYPE_ID_PANTHER_PATHWAY",
     ]);
+  });
+});
+
+describe("runStampLines annotator versions", () => {
+  const stamp = (annotator_versions: Record<string, string | null>) =>
+    runStampLines({
+      versions: {
+        snpway_version: "1.1.0",
+        genome_build: "GRCh37/hg19",
+        annoq_panel: "HRC.r1-1",
+        dbsnp_release: "151",
+        annotator_versions,
+        panther_version: null,
+        panther_tool_release: null,
+      },
+      geneMappingFields: ["enhancer_linked_genes"],
+      testType: "FISHER",
+      correction: "FDR",
+      runDate: "2026-11-02",
+      annotationDataset: "ANNOT_TYPE_ID_PANTHER_PATHWAY",
+    }).filter((line) => /^# (annovar|snpeff|vep)_version,/.test(line));
+
+  it("writes a line only for each tool the backend lists", () => {
+    expect(
+      stamp({ ANNOVAR: "6/7/2020 23:56", SnpEff: "4.3t", VEP: "ensembl-vep-release-107" })
+    ).toEqual([
+      "# annovar_version,6/7/2020 23:56",
+      "# snpeff_version,4.3t",
+      "# vep_version,ensembl-vep-release-107",
+    ]);
+    expect(stamp({ SnpEff: "4.3t" })).toEqual(["# snpeff_version,4.3t"]);
+    expect(stamp({})).toEqual([]); // enhancer-only run
   });
 });
 

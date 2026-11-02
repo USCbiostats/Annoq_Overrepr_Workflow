@@ -9,6 +9,7 @@ from src.config import config
 from src.gene_cols import (
     ALL_GENE_MAPPING_FIELDS,
     ANNOQ_DOWNLOAD_COLUMN_NAMES,
+    ANNOTATORS,
     FALLBACK_FOR,
     GENE_COLS,
     GeneColumn,
@@ -35,12 +36,16 @@ ANNOQ_RSIDS_BATCH_SIZE = 5000
 ANNOQ_TIMEOUT_SECONDS = 300.0
 # dbSNP build of the rsIDs: the backend reads AnnoQ's rs_dbSNP151 field.
 ANNOQ_DBSNP_RELEASE = "151"
+# Genome build of AnnoQ's chr and pos fields (the metadata has no field for it).
+ANNOQ_GENOME_BUILD = "GRCh37/hg19"
 # How long the startup request for AnnoQ's annotation metadata may take.
 ANNOQ_METADATA_TIMEOUT_SECONDS = 30.0
-# AnnoQ variant panel release (e.g. "HRC.r1-1"), read from AnnoQ's /annotations
-# metadata once at startup by load_annoq_panel_release; None until then or if
-# that request failed (downloads then say "unknown").
+# Read from AnnoQ's /annotations metadata once at startup by load_annoq_metadata;
+# None/empty until then or if that request failed (downloads then say "unknown").
+# AnnoQ variant panel release, e.g. "HRC.r1-1".
 annoq_panel_release: str | None = None
+# Annotation tool -> version, e.g. {"SnpEff": "4.3t"}.
+annotator_versions: dict[str, str] = {}
 # Variant key -> gene -> the gene columns that assigned the gene to the variant.
 GeneSources = dict[str, dict[str, list[GeneColumn]]]
 
@@ -415,21 +420,38 @@ def parse_annoq_panel_release(metadata: Any) -> str | None:
     return None
 
 
-async def load_annoq_panel_release() -> str | None:
-    """Fetch AnnoQ's /annotations metadata once and keep the panel release for
-    the life of the process. Any failure leaves it None (downloads say "unknown")."""
-    global annoq_panel_release
+def parse_annotator_versions(metadata: Any) -> dict[str, str]:
+    """Annotation tool versions from AnnoQ's /annotations metadata: the version
+    of each tool's top-level entry, e.g. {"SnpEff": "4.3t"}."""
+    versions: dict[str, str] = {}
+    try:
+        for field in metadata["results"]:
+            name = field.get("name")
+            if name in ANNOTATORS and not field.get("leaf") and field.get("version"):
+                versions[name] = str(field["version"])
+    except (KeyError, TypeError, AttributeError):
+        pass
+    return versions
+
+
+async def load_annoq_metadata() -> None:
+    """Fetch AnnoQ's /annotations metadata once and keep the panel release and
+    annotation tool versions for the life of the process. Any failure leaves them
+    unset (downloads say "unknown")."""
+    global annoq_panel_release, annotator_versions
     try:
         async with httpx.AsyncClient(
             verify=False, timeout=ANNOQ_METADATA_TIMEOUT_SECONDS
         ) as client:
             response = await client.get(annoq_metadata_url())
             response.raise_for_status()
-        annoq_panel_release = parse_annoq_panel_release(response.json())
+        metadata = response.json()
+        annoq_panel_release = parse_annoq_panel_release(metadata)
+        annotator_versions = parse_annotator_versions(metadata)
     except (httpx.HTTPError, ValueError) as e:
-        print(f"AnnoQ metadata unavailable, panel release unknown: {e}")
+        print(f"AnnoQ metadata unavailable, versions unknown: {e}")
         annoq_panel_release = None
-    return annoq_panel_release
+        annotator_versions = {}
 
 
 async def get_download_url(gql_query: str) -> str:

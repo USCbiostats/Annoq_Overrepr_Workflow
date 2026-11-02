@@ -266,8 +266,12 @@ def test_endpoint_returns_run_versions(client, fake_report_services):
     body = client.post("/workflow/overrepresentation", json=REPORT_REQUEST).json()
 
     assert body["run_versions"] == {
+        "snpway_version": "1.1.0",
+        "genome_build": "GRCh37/hg19",
         "annoq_panel": None,
         "dbsnp_release": "151",
+        # Default sources (all); AnnoQ metadata not read in this test.
+        "annotator_versions": {"ANNOVAR": None, "SnpEff": None, "VEP": None},
         "panther_version": "PANTHER version 19.0 Released 2024-06-20",
         "panther_tool_release": "20240807",
     }

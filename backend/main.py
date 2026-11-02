@@ -18,11 +18,13 @@ from src import annoq
 from src.analytics import send_event
 from src.annoq import (
     ANNOQ_DBSNP_RELEASE,
+    ANNOQ_GENOME_BUILD,
     GeneSources,
     get_annoq_df,
     get_rsid_gene_mapping_with_sources,
 )
 from src.config import config
+from src.gene_cols import annotators_for
 from src.input_report import (
     VariantAccounting,
     account_for_variants,
@@ -42,6 +44,7 @@ from src.models import (
 from src.panther import get_panther_info
 from src.progress import ProgressCallback, report_progress
 from src.query import InputType
+from src.version import SNPWAY_VERSION
 from src.workflow import (
     PantherInputError,
     get_overrepresentation,
@@ -64,12 +67,14 @@ warnings.filterwarnings("ignore")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    # One AnnoQ metadata request per process, for the annoq_panel run version.
-    await annoq.load_annoq_panel_release()
+    # One AnnoQ metadata request per process, for the AnnoQ run versions.
+    await annoq.load_annoq_metadata()
     yield
 
 
-app = FastAPI(default_response_class=ORJSONResponse, lifespan=lifespan)
+app = FastAPI(
+    default_response_class=ORJSONResponse, lifespan=lifespan, version=SNPWAY_VERSION
+)
 MAX_PANTHER_GENE_COUNT = 100000
 
 origins = ["*"]
@@ -278,16 +283,29 @@ async def _run_overrepresentation_test(
     return (
         parse_overrepresentation_results(overrepresentation_raw),
         parse_panther_input_list(overrepresentation_raw),
-        _run_versions(*parse_panther_versions(overrepresentation_raw)),
+        _run_versions(request, *parse_panther_versions(overrepresentation_raw)),
     )
 
 
 def _run_versions(
-    panther_version: str | None = None, panther_tool_release: str | None = None
+    request: WorkflowOverrepresentationRequest,
+    panther_version: str | None = None,
+    panther_tool_release: str | None = None,
 ) -> RunVersions:
+    fields = list(request.geneMappingFields)
+    reference_list = request.referenceList
+    if reference_list is not None and reference_list.input_type != InputType.geneList:
+        fields += reference_list.geneMappingFields
     return RunVersions(
+        snpway_version=SNPWAY_VERSION,
+        genome_build=ANNOQ_GENOME_BUILD,
         annoq_panel=annoq.annoq_panel_release,
         dbsnp_release=ANNOQ_DBSNP_RELEASE,
+        # Only the annotation tools behind the sources this run used.
+        annotator_versions={
+            tool: annoq.annotator_versions.get(tool)
+            for tool in annotators_for(fields)
+        },
         panther_version=panther_version,
         panther_tool_release=panther_tool_release,
     )
@@ -358,7 +376,7 @@ async def workflow_overrepresentation(
             variants,
         ) = await _map_request_lists(request)
         panther_input_list: tuple[list[str], list[str]] = ([], [])
-        run_versions = _run_versions()
+        run_versions = _run_versions(request)
 
         if all_unique_genes:
             # Run the enrichment test first; gene details are only needed for
@@ -493,7 +511,7 @@ async def workflow_overrepresentation_stream(
                             overrepresentation_results=[],
                             reference_gene_list=reference_gene_list,
                             input_report=build_input_report(variants, [], ([], [])),
-                            run_versions=_run_versions(),
+                            run_versions=_run_versions(request),
                         ).model_dump(mode="json"),
                     }
                 )

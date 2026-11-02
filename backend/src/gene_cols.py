@@ -53,6 +53,19 @@ GENE_COLS: dict[GeneColumn, Callable[[str], list[str]]] = {
 
 ALL_GENE_MAPPING_FIELDS: list[GeneMappingField] = list(GeneMappingField)
 
+# Annotation tool behind each source, named as in AnnoQ's /annotations metadata;
+# enhancer-linked genes come from no annotation tool.
+ANNOTATORS = ("ANNOVAR", "SnpEff", "VEP")
+FIELD_ANNOTATOR: dict[GeneMappingField, str | None] = {
+    GeneMappingField.ANNOVAR_ensembl: "ANNOVAR",
+    GeneMappingField.ANNOVAR_refseq: "ANNOVAR",
+    GeneMappingField.SnpEff_ensembl: "SnpEff",
+    GeneMappingField.SnpEff_refseq: "SnpEff",
+    GeneMappingField.VEP_ensembl: "VEP",
+    GeneMappingField.VEP_refseq: "VEP",
+    GeneMappingField.enhancer_linked_genes: None,
+}
+
 # Selecting an ANNOVAR gene model also reads its closest-gene column, the two
 # genes flanking an intergenic variant.
 FIELD_COLUMNS: dict[GeneMappingField, list[GeneColumn]] = {
@@ -78,3 +91,9 @@ def gene_columns_for(fields: list[GeneMappingField]) -> list[GeneColumn]:
     """Gene columns behind the selected sources, in column order."""
     selected = {column for field in fields for column in FIELD_COLUMNS[field]}
     return [column for column in GENE_COLS if column in selected]
+
+
+def annotators_for(fields: list[GeneMappingField]) -> list[str]:
+    """Annotation tools behind the selected sources, in ANNOTATORS order."""
+    used = {FIELD_ANNOTATOR[field] for field in fields}
+    return [tool for tool in ANNOTATORS if tool in used]

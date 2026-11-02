@@ -134,9 +134,16 @@ export const runStampLines = (stamp: RunStamp): string[] => {
     stamp.correction === CorrectionType.NONE
       ? NO_CORRECTION_STAMP
       : known(stamp.correction);
+  // One line per annotation tool the run used, as listed by the backend.
+  const annotatorLines = Object.entries(
+    stamp.versions?.annotator_versions ?? {}
+  ).map(([tool, version]) => `# ${tool.toLowerCase()}_version,${known(version)}`);
   return [
+    `# snpway_version,${known(stamp.versions?.snpway_version)}`,
+    `# genome_build,${known(stamp.versions?.genome_build)}`,
     `# annoq_panel,${known(stamp.versions?.annoq_panel)}`,
     `# dbsnp_release,${known(stamp.versions?.dbsnp_release)}`,
+    ...annotatorLines,
     `# panther_version,${known(stamp.versions?.panther_version)}`,
     `# panther_tool_release,${known(stamp.versions?.panther_tool_release)}`,
     `# gene_mapping_sources,${known(geneMappingColumns(stamp.geneMappingFields).join(";"))}`,
