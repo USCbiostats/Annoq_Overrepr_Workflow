@@ -35,6 +35,12 @@ ANNOQ_RSIDS_BATCH_SIZE = 5000
 ANNOQ_TIMEOUT_SECONDS = 300.0
 # dbSNP build of the rsIDs: the backend reads AnnoQ's rs_dbSNP151 field.
 ANNOQ_DBSNP_RELEASE = "151"
+# How long the startup request for AnnoQ's annotation metadata may take.
+ANNOQ_METADATA_TIMEOUT_SECONDS = 30.0
+# AnnoQ variant panel release (e.g. "HRC.r1-1"), read from AnnoQ's /annotations
+# metadata once at startup by load_annoq_panel_release; None until then or if
+# that request failed (downloads then say "unknown").
+annoq_panel_release: str | None = None
 # Variant key -> gene -> the gene columns that assigned the gene to the variant.
 GeneSources = dict[str, dict[str, list[GeneColumn]]]
 
@@ -386,6 +392,44 @@ def _describe_annoq_http_error(exc: httpx.HTTPError) -> str:
     if isinstance(exc, httpx.TimeoutException):
         return f"AnnoQ did not respond within {ANNOQ_TIMEOUT_SECONDS:.0f} seconds"
     return f"Could not reach AnnoQ ({type(exc).__name__}: {exc})"
+
+
+def annoq_metadata_url() -> str:
+    """AnnoQ's annotation metadata endpoint, beside its GraphQL endpoint
+    (https://api-v2.annoq.org/graphql -> https://api-v2.annoq.org/annotations)."""
+    base = config.annotation_api_v2.rstrip("/")
+    if base.endswith("/graphql"):
+        base = base[: -len("/graphql")]
+    return f"{base}/annotations"
+
+
+def parse_annoq_panel_release(metadata: Any) -> str | None:
+    """The panel release from AnnoQ's /annotations metadata: the version of the
+    variant fields (chr, pos, ref, alt), e.g. "HRC.r1-1"."""
+    try:
+        for field in metadata["results"]:
+            if field.get("api_field") == "chr" and field.get("version"):
+                return str(field["version"])
+    except (KeyError, TypeError, AttributeError):
+        pass
+    return None
+
+
+async def load_annoq_panel_release() -> str | None:
+    """Fetch AnnoQ's /annotations metadata once and keep the panel release for
+    the life of the process. Any failure leaves it None (downloads say "unknown")."""
+    global annoq_panel_release
+    try:
+        async with httpx.AsyncClient(
+            verify=False, timeout=ANNOQ_METADATA_TIMEOUT_SECONDS
+        ) as client:
+            response = await client.get(annoq_metadata_url())
+            response.raise_for_status()
+        annoq_panel_release = parse_annoq_panel_release(response.json())
+    except (httpx.HTTPError, ValueError) as e:
+        print(f"AnnoQ metadata unavailable, panel release unknown: {e}")
+        annoq_panel_release = None
+    return annoq_panel_release
 
 
 async def get_download_url(gql_query: str) -> str:

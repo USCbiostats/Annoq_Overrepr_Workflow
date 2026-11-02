@@ -4,6 +4,7 @@ import json
 import httpx
 import pandas as pd
 import pytest
+from fastapi.testclient import TestClient
 
 from src import annoq
 from src.query import IdsQuery, InputType, RsIdListQuery
@@ -159,3 +160,28 @@ def test_download_data_reports_annoq_status(monkeypatch):
         Exception, match="Failed to download data: AnnoQ returned HTTP 404 Not Found"
     ):
         asyncio.run(annoq.download_data("http://annoq.test/downloads/x.txt"))
+
+
+def test_startup_reads_annoq_panel_release(main_module, monkeypatch):
+    # Shape of AnnoQ's /annotations metadata: the variant fields carry the panel release.
+    metadata = {
+        "results": [
+            {"id": "1", "parent_id": "0", "leaf": False, "name": "others", "version": "dbNSFP v4.3c"},
+            {"id": "2", "parent_id": "1", "leaf": True, "name": "chr", "api_field": "chr", "version": "HRC.r1-1"},
+            {"id": "6", "parent_id": "1", "leaf": True, "name": "rs_dbSNP151", "api_field": "rs_dbSNP151", "version": "HRC.r1-1"},
+        ]
+    }
+    requested = []
+    _fake_annoq_client(monkeypatch, httpx.Response(200, json=metadata))
+    real_get = httpx.AsyncClient.get
+
+    async def recording_get(self, url, **kwargs):
+        requested.append(url)
+        return await real_get(self, url, **kwargs)
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", recording_get)
+    monkeypatch.setattr(annoq, "annoq_panel_release", None)
+
+    with TestClient(main_module.app):  # runs the startup hook
+        assert main_module._run_versions().annoq_panel == "HRC.r1-1"
+    assert requested == ["http://annoq.test/annotations"]

@@ -325,7 +325,11 @@ class RunVersions(BaseModel):
     """Data and tool versions behind a run; null when not known."""
 
     annoq_panel: str | None = Field(
-        ..., description="AnnoQ variant panel release (not read by the backend)"
+        ...,
+        description=(
+            "AnnoQ variant panel release from AnnoQ's /annotations metadata, "
+            "read once at startup; null if that request failed"
+        ),
     )
     dbsnp_release: str | None = Field(..., description="dbSNP build of the rsIDs")
     panther_version: str | None = Field(

@@ -82,7 +82,7 @@ export type GeneMappingDownloadData = GeneMappingResponse & PantherGeneInfoRespo
 export type WorkflowGeneMappingsResponse = GeneMappingDownloadData;
 
 export type RunVersions = {
-    annoq_panel: string | null; // null: not read by the backend
+    annoq_panel: string | null; // null: AnnoQ's metadata could not be read at backend startup
     dbsnp_release: string | null;
     panther_version: string | null; // PANTHER annot_version_release_date
     panther_tool_release: string | null; // PANTHER tool_release_date

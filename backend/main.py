@@ -2,6 +2,7 @@
 
 import asyncio
 import warnings
+from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Awaitable, Callable
 
 import orjson
@@ -13,6 +14,7 @@ from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import FileResponse
 
+from src import annoq
 from src.analytics import send_event
 from src.annoq import (
     ANNOQ_DBSNP_RELEASE,
@@ -60,7 +62,14 @@ class NoCacheStaticFiles(StaticFiles):
 
 warnings.filterwarnings("ignore")
 
-app = FastAPI(default_response_class=ORJSONResponse)
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # One AnnoQ metadata request per process, for the annoq_panel run version.
+    await annoq.load_annoq_panel_release()
+    yield
+
+
+app = FastAPI(default_response_class=ORJSONResponse, lifespan=lifespan)
 MAX_PANTHER_GENE_COUNT = 100000
 
 origins = ["*"]
@@ -277,7 +286,7 @@ def _run_versions(
     panther_version: str | None = None, panther_tool_release: str | None = None
 ) -> RunVersions:
     return RunVersions(
-        annoq_panel=None,
+        annoq_panel=annoq.annoq_panel_release,
         dbsnp_release=ANNOQ_DBSNP_RELEASE,
         panther_version=panther_version,
         panther_tool_release=panther_tool_release,
