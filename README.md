@@ -6,6 +6,8 @@ The API utilizes [AnnoQ](http://annoq.org/) to get a list of genes from a list o
 
 The same workflow can be run from R with the [AnnoQR](https://github.com/USCbiostats/AnnoQR) package: `remotes::install_github("USCbiostats/AnnoQR")`.
 
+[AGENTS.md](AGENTS.md) documents the API and conventions for programmatic and agent integration.
+
 ## Installation
 
 To install the project, clone the repository.
