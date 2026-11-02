@@ -21,6 +21,7 @@ import {
   GeneMappingTool,
 } from "../constants";
 import { describeGeneMappingFields } from "../utils";
+import HelpTip from "./HelpTip";
 
 export type GeneMappingToolsSelectorProps = {
   title: string;
@@ -117,26 +118,54 @@ const GeneMappingToolsSelector: React.FC<GeneMappingToolsSelectorProps> = ({
   const details = (
     <>
       {sameAsInput && (
-        <FormControlLabel
-          control={
-            <Checkbox
-              checked={sameAsInput.checked}
-              onChange={(e) => sameAsInput.onChange(e.target.checked)}
-              disabled={disabled}
-            />
-          }
-          label="Same as input list"
-          sx={{ mb: 1 }}
-        />
+        <Stack direction="row" alignItems="center" sx={{ mb: 1 }}>
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={sameAsInput.checked}
+                onChange={(e) => sameAsInput.onChange(e.target.checked)}
+                disabled={disabled}
+              />
+            }
+            label="Same as input list"
+            sx={{ mr: 0.5 }}
+          />
+          <HelpTip label="About same as input list">
+            While checked, the reference SNPs are mapped with the same tools as
+            the input list. Clear it to choose different tools. Using the same
+            mapping procedure for the input and reference lists is generally
+            recommended.
+          </HelpTip>
+        </Stack>
       )}
       <Table size="small" sx={{ "& td, & th": { px: 1 } }}>
         <TableHead>
           <TableRow>
             <TableCell sx={{ fontWeight: 600 }}>Mapping method</TableCell>
             <TableCell sx={{ fontWeight: 600 }} align="center">
-              Use method
+              <Stack
+                direction="row"
+                alignItems="center"
+                justifyContent="center"
+                spacing={0.5}
+              >
+                <span>Use method</span>
+                <HelpTip label="About use method">
+                  Include or exclude the tool. A dash means only some of its
+                  gene models are selected.
+                </HelpTip>
+              </Stack>
             </TableCell>
-            <TableCell sx={{ fontWeight: 600 }}>Gene model</TableCell>
+            <TableCell sx={{ fontWeight: 600 }}>
+              <Stack direction="row" alignItems="center" spacing={0.5}>
+                <span>Gene model</span>
+                <HelpTip label="About gene model">
+                  The gene annotation (Ensembl and/or RefSeq) used by ANNOVAR,
+                  SnpEff, and VEP. Select at least one for each tool you use;
+                  deselecting both removes the tool.
+                </HelpTip>
+              </Stack>
+            </TableCell>
           </TableRow>
         </TableHead>
         <TableBody>

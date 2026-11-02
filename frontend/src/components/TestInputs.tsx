@@ -15,6 +15,7 @@ import {
   Typography,
   Stack,
   Box,
+  Tooltip,
 } from "@mui/material";
 import {
   ALL_GENE_MAPPING_FIELDS,
@@ -29,6 +30,7 @@ import { SAMPLE_VCF_FILE } from "./SampleVCF";
 import { SAMPLE_RSID_LIST } from "./SampleRSIDList";
 import SnpListInputPanel, { SnpListSample } from "./SnpListInputPanel";
 import GeneMappingToolsSelector from "./GeneMappingToolsSelector";
+import HelpTip, { TipList } from "./HelpTip";
 
 // Use material ui components
 
@@ -36,6 +38,8 @@ type FormSectionProps = {
   number: number;
   title: string;
   description?: string;
+  // Guidance shown in an info tooltip next to the title.
+  tip?: React.ReactNode;
   children: React.ReactNode;
 };
 
@@ -44,15 +48,19 @@ const FormSection: React.FC<FormSectionProps> = ({
   number,
   title,
   description,
+  tip,
   children,
 }) => (
   <Box
     component="section"
     sx={{ border: "1px solid", borderColor: "divider", borderRadius: 1, p: 2.5 }}
   >
-    <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-      {number}. {title}
-    </Typography>
+    <Stack direction="row" alignItems="center" spacing={0.5}>
+      <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+        {number}. {title}
+      </Typography>
+      {tip && <HelpTip label={`About ${title.toLowerCase()}`}>{tip}</HelpTip>}
+    </Stack>
     {description && (
       <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
         {description}
@@ -128,6 +136,15 @@ const TestInputs: React.FC<TestInputsProps> = ({
     (useCustomReference &&
       (!refText.trim() ||
         (!refIsGeneList && effectiveRefMappingFields.length === 0)));
+
+  // Explains why Run test is disabled, in the order the form is filled in.
+  const runDisabledReason = !inputText.trim()
+    ? "Provide an input list first."
+    : inputMappingFields.length === 0
+    ? "Select at least one SNP to gene mapping tool for the input list."
+    : useCustomReference && !refText.trim()
+    ? "Provide a custom reference list, or clear \"Use custom reference list\"."
+    : "Select at least one SNP to gene mapping tool for the reference list.";
 
   const query_data = () => {
     const input = buildSnpListPayload(
@@ -210,7 +227,17 @@ const TestInputs: React.FC<TestInputsProps> = ({
         <FormGroup>
           <fieldset disabled={isLoading} style={{ border: "none", padding: 0 }}>
             <Stack spacing={3}>
-              <FormSection number={1} title="Input list">
+              <FormSection
+                number={1}
+                title="Input list"
+                tip={
+                  <>
+                    Provide the SNPs to analyze as a VCF file or a list of
+                    rsIDs. Upload a file, paste the content, or load a sample
+                    to try the workflow first.
+                  </>
+                }
+              >
                 <SnpListInputPanel
                   idPrefix="input"
                   selectLabel="Retrieve SNP data by"
@@ -228,6 +255,16 @@ const TestInputs: React.FC<TestInputsProps> = ({
                 number={2}
                 title="Annotation data set"
                 description="Select an annotation dataset to analyze."
+                tip={
+                  <>
+                    Choose one dataset for the enrichment analysis. SNPWay
+                    tests its categories for overrepresentation in the genes
+                    mapped from your input list.
+                    <TipList
+                      items={Datasets.map((dataset) => dataset.name)}
+                    />
+                  </>
+                }
               >
                 <FormControl
                   component={"fieldset"}
@@ -252,15 +289,28 @@ const TestInputs: React.FC<TestInputsProps> = ({
                 </FormControl>
               </FormSection>
 
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={advancedOptions}
-                    onChange={() => setAdvancedOptions(!advancedOptions)}
+              <Stack direction="row" alignItems="center">
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={advancedOptions}
+                      onChange={() => setAdvancedOptions(!advancedOptions)}
+                    />
+                  }
+                  label="Show advanced options"
+                  sx={{ mr: 0.5 }}
+                />
+                <HelpTip label="About advanced options">
+                  Optional settings. Leave them closed to use the defaults:
+                  <TipList
+                    items={[
+                      "SNP to gene mapping: all available AnnoQ mapping tools",
+                      "Reference list: all human genes used by PANTHER",
+                      "Statistical test: Fisher's exact test with false discovery rate correction",
+                    ]}
                   />
-                }
-                label="Show advanced options"
-              />
+                </HelpTip>
+              </Stack>
 
               <Collapse in={advancedOptions}>
                 <Stack spacing={3}>
@@ -268,6 +318,19 @@ const TestInputs: React.FC<TestInputsProps> = ({
                     number={3}
                     title="SNP to gene mapping annotation tools for input list"
                     description="Choose which annotation tools are used to map the input SNPs to genes."
+                    tip={
+                      <>
+                        By default, all available AnnoQ mapping tools are used.
+                        <TipList
+                          items={[
+                            "At least one mapping tool must remain selected.",
+                            "For ANNOVAR, SnpEff, and VEP, select at least one gene model (Ensembl and/or RefSeq). Deselecting both removes that tool.",
+                            "PEREGRINE maps SNPs to enhancer-linked genes and has no gene model.",
+                            "Gene mappings from all selected tools are combined before the enrichment analysis.",
+                          ]}
+                        />
+                      </>
+                    }
                   >
                     <GeneMappingToolsSelector
                       title="Selected"
@@ -282,6 +345,20 @@ const TestInputs: React.FC<TestInputsProps> = ({
                     number={4}
                     title="Reference list"
                     description="By default PANTHER uses all human genes as the reference list. Provide the background SNPs (for example, all genotyped SNPs) to use their genes instead."
+                    tip={
+                      <>
+                        A custom reference is appropriate when the variants that
+                        could have been observed are restricted, such as the
+                        SNPs on a genotyping array. Select &quot;Use custom
+                        reference list&quot;, then provide either:
+                        <TipList
+                          items={[
+                            "A background SNP list as a VCF file or rsID list",
+                            "A background gene list, preferably using UniProt identifiers",
+                          ]}
+                        />
+                      </>
+                    }
                   >
                     <FormControlLabel
                       control={
@@ -335,7 +412,22 @@ const TestInputs: React.FC<TestInputsProps> = ({
                     </Collapse>
                   </FormSection>
 
-                  <FormSection number={5} title="Statistical test">
+                  <FormSection
+                    number={5}
+                    title="Statistical test"
+                    tip={
+                      <>
+                        The default is Fisher&apos;s exact test with false
+                        discovery rate correction.
+                        <TipList
+                          items={[
+                            "Test type: Fisher's exact or binomial",
+                            "Correction for multiple testing: false discovery rate, Bonferroni, or none",
+                          ]}
+                        />
+                      </>
+                    }
+                  >
                     <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
                       <FormControl
                         component={"fieldset"}
@@ -388,14 +480,26 @@ const TestInputs: React.FC<TestInputsProps> = ({
               </Collapse>
 
               <Stack alignItems={"start"} direction="row" spacing={2}>
-                <Button
-                  variant="contained"
-                  color="primary"
-                  onClick={handleRunTest}
-                  disabled={submitDisabled}
+                <Tooltip
+                  arrow
+                  title={
+                    submitDisabled && !isLoading
+                      ? runDisabledReason
+                      : "Start the enrichment analysis. Processing time depends on the size of the input and the selected options."
+                  }
                 >
-                  Run test
-                </Button>
+                  {/* A span so the tooltip still works while the button is disabled. */}
+                  <span>
+                    <Button
+                      variant="contained"
+                      color="primary"
+                      onClick={handleRunTest}
+                      disabled={submitDisabled}
+                    >
+                      Run test
+                    </Button>
+                  </span>
+                </Tooltip>
                 <Button
                   variant="text"
                   color="secondary"
