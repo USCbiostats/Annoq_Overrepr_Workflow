@@ -160,6 +160,28 @@ def parse_overrepresentation_results(
     return normalized_results
 
 
+def parse_panther_input_list(
+    overrepresentation_data: dict[str, Any],
+) -> tuple[list[str], list[str]]:
+    """Input gene IDs PANTHER reports as mapped and as unmapped."""
+    input_list = overrepresentation_data.get("results", {}).get("input_list")
+    if not isinstance(input_list, dict):
+        return [], []
+    return (
+        _normalize_mapped_ids(input_list.get("mapped_ids")),
+        _normalize_mapped_ids(input_list.get("unmapped_ids")),
+    )
+
+
+def parse_panther_versions(
+    overrepresentation_data: dict[str, Any],
+) -> tuple[str | None, str | None]:
+    """PANTHER's (annot_version_release_date, tool_release_date), or None."""
+    results = overrepresentation_data.get("results", {})
+    values = (results.get("annot_version_release_date"), results.get("tool_release_date"))
+    return tuple(None if v in (None, "") else str(v) for v in values)
+
+
 def _get_relevant_columns(annotation_dataset: str | None) -> list[str]:
     base_columns = ["rsId", "PANTHER_ID", "mappedGenes"]
 

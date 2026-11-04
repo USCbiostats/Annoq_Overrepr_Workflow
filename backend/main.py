@@ -2,6 +2,7 @@
 
 import asyncio
 import warnings
+from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Awaitable, Callable
 
 import orjson
@@ -13,13 +14,27 @@ from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import FileResponse
 
+from src import annoq
 from src.analytics import send_event
-from src.annoq import get_annoq_df, get_annoq_version, get_rsid_gene_mapping
+from src.annoq import (
+    GeneSources,
+    get_annoq_df,
+    get_annoq_version,
+    get_rsid_gene_mapping_with_sources,
+)
+
 from src.config import config
+from src.gene_cols import annotators_for
+from src.input_report import (
+    VariantAccounting,
+    account_for_variants,
+    build_input_report,
+)
 from src.models import (
     OverrepresentationResultItem,
     PantherGeneInfoResponse,
     ReferenceListInput,
+    RunVersions,
     SnpListInput,
     WorkflowGeneMappingsResponse,
     WorkflowInputRequest,
@@ -29,10 +44,13 @@ from src.models import (
 from src.panther import get_panther_info
 from src.progress import ProgressCallback, report_progress
 from src.query import InputType
+from src.version import SNPWAY_VERSION
 from src.workflow import (
     PantherInputError,
     get_overrepresentation,
     parse_overrepresentation_results,
+    parse_panther_input_list,
+    parse_panther_versions,
 )
 
 
@@ -47,7 +65,16 @@ class NoCacheStaticFiles(StaticFiles):
 
 warnings.filterwarnings("ignore")
 
-app = FastAPI(default_response_class=ORJSONResponse)
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # One AnnoQ metadata request per process, for the AnnoQ run versions.
+    await annoq.load_annoq_metadata()
+    yield
+
+
+app = FastAPI(
+    default_response_class=ORJSONResponse, lifespan=lifespan, version=SNPWAY_VERSION
+)
 MAX_PANTHER_GENE_COUNT = 100000
 
 origins = ["*"]
@@ -113,7 +140,7 @@ async def _run_mapping_pipeline(
     snp_list: SnpListInput,
     list_label: str = "Input",
     on_progress: ProgressCallback | None = None,
-) -> tuple[list[str], dict[str, list[str]]]:
+) -> tuple[list[str], dict[str, list[str]], GeneSources, VariantAccounting]:
     query: Any = _resolve_query(snp_list)
     if query is None:
         raise HTTPException(
@@ -127,21 +154,25 @@ async def _run_mapping_pipeline(
     df = await get_annoq_df(snp_list.input_type, query, on_progress=on_progress)
     force_chr_pos_keys = snp_list.input_type == InputType.ids
 
-    rs_id_gene_mapping = get_rsid_gene_mapping(
+    rs_id_gene_mapping, rs_id_gene_sources = get_rsid_gene_mapping_with_sources(
         df,
         force_chr_pos_keys=force_chr_pos_keys,
         gene_mapping_fields=snp_list.geneMappingFields,
     )
 
+    variants = account_for_variants(
+        snp_list.input_type, query, df, rs_id_gene_mapping, force_chr_pos_keys
+    )
+
     all_unique_genes = _build_unique_genes(rs_id_gene_mapping)
     _validate_panther_gene_limit(all_unique_genes, list_label)
-    return all_unique_genes, rs_id_gene_mapping
+    return all_unique_genes, rs_id_gene_mapping, rs_id_gene_sources, variants
 
 
 async def _read_reference_gene_list(
     reference_list: ReferenceListInput,
     on_progress: ProgressCallback | None = None,
-) -> tuple[list[str], dict[str, list[str]]]:
+) -> tuple[list[str], dict[str, list[str]], GeneSources, VariantAccounting]:
     """Use a reference gene list as it is: no AnnoQ mapping is needed."""
     if reference_list.geneListQuery is None:
         raise HTTPException(
@@ -156,7 +187,7 @@ async def _read_reference_gene_list(
     )
     _validate_panther_gene_limit(genes, "Reference list")
     report_progress(on_progress, 1, 1)
-    return genes, {}
+    return genes, {}, {}, VariantAccounting(rows=[], records_not_matched_to_input=0)
 
 
 # Runs one workflow stage: run_stage(stage name, make_coro) where make_coro
@@ -186,8 +217,12 @@ async def _gather_or_cancel(*awaitables: Awaitable[Any]) -> list[Any]:
 async def _map_request_lists(
     request: WorkflowOverrepresentationRequest,
     run_stage: StageRunner = _run_untracked,
-) -> tuple[list[str], dict[str, list[str]], list[str] | None]:
+) -> tuple[
+    list[str], dict[str, list[str]], GeneSources, list[str] | None, VariantAccounting
+]:
     """Map the input list and, if given, the reference list to genes."""
+    # Versions for the download stamp, in case AnnoQ was down at startup.
+    await annoq.ensure_annoq_metadata()
     reference_list = request.referenceList
     jobs = [
         run_stage(
@@ -212,24 +247,34 @@ async def _map_request_lists(
         )
 
     results = await _gather_or_cancel(*jobs)
-    all_unique_genes, rs_id_gene_mapping = results[0]
+    all_unique_genes, rs_id_gene_mapping, rs_id_gene_sources, variants = results[0]
     if reference_list is None:
-        return all_unique_genes, rs_id_gene_mapping, None
+        return all_unique_genes, rs_id_gene_mapping, rs_id_gene_sources, None, variants
 
-    reference_gene_list, _ = results[1]
+    reference_gene_list, _, _, _ = results[1]
     if not reference_gene_list:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="No genes found for the custom reference list.",
         )
-    return all_unique_genes, rs_id_gene_mapping, reference_gene_list
+    return (
+        all_unique_genes,
+        rs_id_gene_mapping,
+        rs_id_gene_sources,
+        reference_gene_list,
+        variants,
+    )
 
 
 async def _run_overrepresentation_test(
     request: WorkflowOverrepresentationRequest,
     gene_list: list[str],
     reference_gene_list: list[str] | None,
-) -> list[OverrepresentationResultItem]:
+) -> tuple[
+    list[OverrepresentationResultItem], tuple[list[str], list[str]], RunVersions
+]:
+    """Returns the results, PANTHER's (mapped, unmapped) input gene IDs and
+    the run versions."""
     overrepresentation_raw = await get_overrepresentation(
         gene_list=gene_list,
         annot_data_set=request.annotDataSet,
@@ -237,7 +282,35 @@ async def _run_overrepresentation_test(
         enrichment_test_type=request.enrichmentTestType.value,
         ref_gene_list=reference_gene_list,
     )
-    return parse_overrepresentation_results(overrepresentation_raw)
+    return (
+        parse_overrepresentation_results(overrepresentation_raw),
+        parse_panther_input_list(overrepresentation_raw),
+        _run_versions(request, *parse_panther_versions(overrepresentation_raw)),
+    )
+
+
+def _run_versions(
+    request: WorkflowOverrepresentationRequest,
+    panther_version: str | None = None,
+    panther_tool_release: str | None = None,
+) -> RunVersions:
+    fields = list(request.geneMappingFields)
+    reference_list = request.referenceList
+    if reference_list is not None and reference_list.input_type != InputType.geneList:
+        fields += reference_list.geneMappingFields
+    return RunVersions(
+        snpway_version=SNPWAY_VERSION,
+        genome_build=annoq.annoq_data_versions.get("genome_build"),
+        annoq_panel=annoq.annoq_data_versions.get("data_version"),
+        dbsnp_release=annoq.annoq_data_versions.get("dbsnp_release"),
+        # Only the annotation tools behind the sources this run used.
+        annotator_versions={
+            tool: annoq.annotator_versions.get(tool)
+            for tool in annotators_for(fields)
+        },
+        panther_version=panther_version,
+        panther_tool_release=panther_tool_release,
+    )
 
 
 def _error_status_and_detail(exc: Exception) -> tuple[int, str]:
@@ -254,7 +327,14 @@ async def workflow_gene_mappings(
     request: WorkflowInputRequest,
 ) -> WorkflowGeneMappingsResponse:
     try:
-        all_unique_genes, rs_id_gene_mapping = await _run_mapping_pipeline(request)
+        (
+            all_unique_genes,
+            rs_id_gene_mapping,
+            rs_id_gene_sources,
+            variants,
+        ) = await _run_mapping_pipeline(request)
+        # No overrepresentation test here, so no PANTHER mapped/unmapped lists.
+        input_report = build_input_report(variants, all_unique_genes, None)
 
         if not all_unique_genes:
             return WorkflowGeneMappingsResponse(
@@ -262,6 +342,7 @@ async def workflow_gene_mappings(
                 rsId_genes_map={},
                 panther_gene_info={},
                 gene_panther_mapping={},
+                input_report=input_report,
             )
 
         panther_gene_info_data, gene_panther_mapping_data = await get_panther_info(
@@ -271,8 +352,10 @@ async def workflow_gene_mappings(
         return WorkflowGeneMappingsResponse(
             gene_list=all_unique_genes,
             rsId_genes_map=rs_id_gene_mapping,
+            rsId_gene_sources=rs_id_gene_sources,
             panther_gene_info=panther_gene_info_data,
             gene_panther_mapping=gene_panther_mapping_data,
+            input_report=input_report,
         )
     except HTTPException:
         raise
@@ -290,13 +373,21 @@ async def workflow_overrepresentation(
         (
             all_unique_genes,
             rs_id_gene_mapping,
+            rs_id_gene_sources,
             reference_gene_list,
+            variants,
         ) = await _map_request_lists(request)
+        panther_input_list: tuple[list[str], list[str]] = ([], [])
+        run_versions = _run_versions(request)
 
         if all_unique_genes:
             # Run the enrichment test first; gene details are only needed for
             # downloads.
-            overrepresentation_results = await _run_overrepresentation_test(
+            (
+                overrepresentation_results,
+                panther_input_list,
+                run_versions,
+            ) = await _run_overrepresentation_test(
                 request, all_unique_genes, reference_gene_list
             )
             panther_gene_info_data, gene_panther_mapping_data = await get_panther_info(
@@ -310,10 +401,15 @@ async def workflow_overrepresentation(
         return WorkflowOverrepresentationResponse(
             gene_list=all_unique_genes,
             rsId_genes_map=rs_id_gene_mapping,
+            rsId_gene_sources=rs_id_gene_sources,
             panther_gene_info=panther_gene_info_data,
             gene_panther_mapping=gene_panther_mapping_data,
             overrepresentation_results=overrepresentation_results,
             reference_gene_list=reference_gene_list,
+            input_report=build_input_report(
+                variants, all_unique_genes, panther_input_list
+            ),
+            run_versions=run_versions,
         )
     except Exception as e:
         status_code, detail = _error_status_and_detail(e)
@@ -399,7 +495,9 @@ async def workflow_overrepresentation_stream(
             (
                 all_unique_genes,
                 rs_id_gene_mapping,
+                rs_id_gene_sources,
                 reference_gene_list,
+                variants,
             ) = await _map_request_lists(request, run_stage)
 
             if not all_unique_genes:
@@ -409,10 +507,13 @@ async def workflow_overrepresentation_stream(
                         "data": WorkflowOverrepresentationResponse(
                             gene_list=[],
                             rsId_genes_map=rs_id_gene_mapping,
+                            rsId_gene_sources=rs_id_gene_sources,
                             panther_gene_info={},
                             gene_panther_mapping={},
                             overrepresentation_results=[],
                             reference_gene_list=reference_gene_list,
+                            input_report=build_input_report(variants, [], ([], [])),
+                            run_versions=_run_versions(request),
                         ).model_dump(mode="json"),
                     }
                 )
@@ -420,7 +521,11 @@ async def workflow_overrepresentation_stream(
 
             # Run the enrichment test first and send results as soon as it is
             # done; gene details (only needed for downloads) are fetched after.
-            overrepresentation_results = await run_stage(
+            (
+                overrepresentation_results,
+                panther_input_list,
+                run_versions,
+            ) = await run_stage(
                 "overrepresentation",
                 lambda _: _run_overrepresentation_test(
                     request, all_unique_genes, reference_gene_list
@@ -433,10 +538,15 @@ async def workflow_overrepresentation_stream(
                     "data": WorkflowOverrepresentationResponse(
                         gene_list=all_unique_genes,
                         rsId_genes_map=rs_id_gene_mapping,
+                        rsId_gene_sources=rs_id_gene_sources,
                         panther_gene_info={},
                         gene_panther_mapping={},
                         overrepresentation_results=overrepresentation_results,
                         reference_gene_list=reference_gene_list,
+                        input_report=build_input_report(
+                            variants, all_unique_genes, panther_input_list
+                        ),
+                        run_versions=run_versions,
                     ).model_dump(mode="json"),
                 }
             )

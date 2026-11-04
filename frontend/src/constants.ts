@@ -48,6 +48,39 @@ export const GENE_MAPPING_TOOLS: GeneMappingTool[] = [
 
 export const ALL_GENE_MAPPING_FIELDS: GeneMappingField[] = Object.values(GeneMappingField);
 
+// AnnoQ closest-gene columns: the genes flanking an intergenic variant. Selecting an
+// ANNOVAR gene model also uses its closest-gene column (backend gene_cols.py).
+export const ANNOVAR_ENSEMBL_CLOSEST = "ANNOVAR_ensembl_Closest_gene";
+export const ANNOVAR_REFSEQ_CLOSEST = "ANNOVAR_refseq_Closest_gene";
+
+// AnnoQ gene columns behind each selectable source, in column order.
+export const GENE_MAPPING_COLUMNS: Record<GeneMappingField, string[]> = {
+    [GeneMappingField.ANNOVAR_ENSEMBL]: [GeneMappingField.ANNOVAR_ENSEMBL, ANNOVAR_ENSEMBL_CLOSEST],
+    [GeneMappingField.ANNOVAR_REFSEQ]: [GeneMappingField.ANNOVAR_REFSEQ, ANNOVAR_REFSEQ_CLOSEST],
+    [GeneMappingField.SNPEFF_ENSEMBL]: [GeneMappingField.SNPEFF_ENSEMBL],
+    [GeneMappingField.SNPEFF_REFSEQ]: [GeneMappingField.SNPEFF_REFSEQ],
+    [GeneMappingField.VEP_ENSEMBL]: [GeneMappingField.VEP_ENSEMBL],
+    [GeneMappingField.VEP_REFSEQ]: [GeneMappingField.VEP_REFSEQ],
+    [GeneMappingField.ENHANCER_LINKED_GENES]: [GeneMappingField.ENHANCER_LINKED_GENES]
+};
+
+export const ALL_GENE_COLUMNS: string[] = ALL_GENE_MAPPING_FIELDS.flatMap(
+    (field) => GENE_MAPPING_COLUMNS[field]
+);
+
+// Source names used in the "sources" column of the downloads, by gene column.
+export const GENE_MAPPING_SOURCE_LABELS: Record<string, string> = {
+    [GeneMappingField.ANNOVAR_ENSEMBL]: "ANNOVAR-Ensembl",
+    [ANNOVAR_ENSEMBL_CLOSEST]: "ANNOVAR-Ensembl-closest",
+    [GeneMappingField.ANNOVAR_REFSEQ]: "ANNOVAR-RefSeq",
+    [ANNOVAR_REFSEQ_CLOSEST]: "ANNOVAR-RefSeq-closest",
+    [GeneMappingField.SNPEFF_ENSEMBL]: "SnpEff-Ensembl",
+    [GeneMappingField.SNPEFF_REFSEQ]: "SnpEff-RefSeq",
+    [GeneMappingField.VEP_ENSEMBL]: "VEP-Ensembl",
+    [GeneMappingField.VEP_REFSEQ]: "VEP-RefSeq",
+    [GeneMappingField.ENHANCER_LINKED_GENES]: "enhancer"
+};
+
 export enum TestType {
     FISHER = "FISHER",
     BINOMIAL = "BINOMIAL"

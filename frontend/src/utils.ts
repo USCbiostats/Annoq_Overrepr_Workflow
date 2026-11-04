@@ -74,6 +74,45 @@ export const parseVcfToIds = (
     return { ids, invalidRows };
 };
 
+export type VcfLine = {
+    lineNumber: number; // 1-based line number in the file
+    chrom: string;
+    pos: string;
+    id: string;
+    ref: string;
+    alt: string;
+    // The chr:pos ID sent to the backend; null when the line was skipped as invalid.
+    submittedId: string | null;
+};
+
+// One entry per VCF data line (header and blank lines excluded), using the
+// same rules as parseVcfToIds to decide validity and build the chr:pos ID.
+export const parseVcfLines = (rawVcf: string): VcfLine[] => {
+    const vcfLines: VcfLine[] = [];
+    rawVcf.split("\n").forEach((line, index) => {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith("#")) {
+            return;
+        }
+        const tabFields = trimmed.split("\t");
+        const fields = tabFields.length >= 2 ? tabFields : trimmed.split(/\s+/);
+        const [chrom = "", pos = "", id = "", ref = "", alt = ""] = fields;
+        const normalizedChrom = normalizeChromosome(chrom);
+        const normalizedPos = pos.trim();
+        const valid = normalizedChrom !== "" && /^\d+$/.test(normalizedPos);
+        vcfLines.push({
+            lineNumber: index + 1,
+            chrom,
+            pos,
+            id,
+            ref,
+            alt,
+            submittedId: valid ? `${normalizedChrom}:${normalizedPos}` : null,
+        });
+    });
+    return vcfLines;
+};
+
 // Reads a gene list: one entry per line. For tab-delimited files only the
 // first column is used. Blank lines and lines starting with "#" are skipped,
 // and duplicates are removed.

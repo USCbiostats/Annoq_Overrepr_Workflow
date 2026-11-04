@@ -6,6 +6,7 @@ import {
   Select,
   MenuItem,
   FormControl,
+  FormHelperText,
   InputLabel,
   FormGroup,
   FormControlLabel,
@@ -91,16 +92,23 @@ export type TestInputsProps = {
     payload: any,
     dataset: string,
     testType: TestType,
-    correction: CorrectionType
+    correction: CorrectionType,
+    // Original VCF text, kept in the browser for the input variant report;
+    // null for rsID input.
+    inputVcfText: string | null
   ) => void;
   onReset: () => void;
   isLoading: boolean;
+  // Genome build of the AnnoQ data, from AnnoQ's /version; left out of the
+  // input note while unknown.
+  genomeBuild?: string | null;
 };
 
 const TestInputs: React.FC<TestInputsProps> = ({
   onRunTest,
   isLoading,
   onReset,
+  genomeBuild,
 }) => {
   const [inputType, setInputType] = useState(InputTypes.VCF);
   const [inputText, setInputText] = useState("");
@@ -180,7 +188,13 @@ const TestInputs: React.FC<TestInputsProps> = ({
     setInputError(null);
     try {
       const data = query_data();
-      onRunTest(data, annotDataSet, testType, correction);
+      onRunTest(
+        data,
+        annotDataSet,
+        testType,
+        correction,
+        inputType === InputTypes.VCF ? inputText : null
+      );
     } catch (error) {
       setInputError((error as Error).message);
     }
@@ -473,11 +487,26 @@ const TestInputs: React.FC<TestInputsProps> = ({
                             No correction
                           </MenuItem>
                         </Select>
+                        {correction === CorrectionType.NONE && (
+                          <FormHelperText>
+                            P-values will not be corrected for multiple
+                            testing. The results page and downloads will say
+                            so.
+                          </FormHelperText>
+                        )}
                       </FormControl>
                     </Stack>
                   </FormSection>
                 </Stack>
               </Collapse>
+
+              <Typography variant="body2" color="text.secondary">
+                SNPWay is intended for predefined variant lists (lead SNPs,
+                curated panels, credible sets){genomeBuild ? ` on ${genomeBuild}` : ""}. For GWAS-derived
+                inputs, provide LD-pruned or otherwise independent variants;
+                correlated variants can give individual loci disproportionate
+                weight in the enrichment test.
+              </Typography>
 
               <Stack alignItems={"start"} direction="row" spacing={2}>
                 <Tooltip

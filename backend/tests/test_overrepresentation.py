@@ -7,7 +7,8 @@ import pytest
 
 from src import workflow
 from src.config import config
-from src.gene_cols import GeneMappingField
+from src.gene_cols import GeneColumn, GeneMappingField
+
 from src.query import IdsQuery, RsIdListQuery
 
 
@@ -100,7 +101,8 @@ def _annoq_df(rows: list[dict[str, str]]) -> pd.DataFrame:
     full_rows = []
     for row in rows:
         full_row = {"chr": "1", "pos": "100", config.annoq_rsid_field: ""}
-        full_row.update({field.value: "" for field in GeneMappingField})
+        full_row.update({column.value: "" for column in GeneColumn})
+
         full_row.update(row)
         full_rows.append(full_row)
     return pd.DataFrame(full_rows)

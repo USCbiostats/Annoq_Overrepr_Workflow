@@ -31,9 +31,17 @@ import {
 import Footer from "../components/Footer";
 import {
   AnnoqVersion,
+  InputReport,
   WorkflowOverrepresentationResponse,
   WorkflowStreamEvent,
 } from "../models";
+import {
+  createInputVariantReportCsv,
+  formatRunDate,
+  runStampLines,
+  saveCsvFile,
+  withRunDate,
+} from "../components/utils";
 import ResultDisplay from "../components/ResultDisplay";
 import { WorkflowStages, applyStageEvent } from "../workflowProgress";
 
@@ -52,6 +60,17 @@ function Home() {
   });
   const [resultInputType, setResultInputType] =
     useState<InputTypes | null>(null);
+  // Original VCF text of the shown results, for the input variant report.
+  const [resultVcfText, setResultVcfText] = useState<string | null>(null);
+  // Input variant report of a run that found no genes, offered with the error.
+  const [noGenesReport, setNoGenesReport] = useState<{
+    report: InputReport;
+    vcfText: string | null;
+    stampLines: string[];
+    runDate: string;
+  } | null>(null);
+  // Date of the shown results, stamped into downloads.
+  const [resultRunDate, setResultRunDate] = useState("");
   const [resultMappingFields, setResultMappingFields] = useState({
     input: ALL_GENE_MAPPING_FIELDS,
     reference: null as GeneMappingField[] | null,
@@ -93,7 +112,8 @@ function Home() {
     payload: any,
     dataset: string,
     testType: TestType,
-    correction: CorrectionType
+    correction: CorrectionType,
+    inputVcfText: string | null
   ) => {
     runAbortRef.current?.abort();
     const controller = new AbortController();
@@ -101,6 +121,7 @@ function Home() {
 
     setIsLoading(true);
     setError(null);
+    setNoGenesReport(null);
     setSuccess(false);
     setGeneDetailsError(null);
     setDownloadsReady(false);
@@ -118,8 +139,24 @@ function Home() {
     const showResults = (response: WorkflowOverrepresentationResponse) => {
       setWorkflowResponse(response);
 
+      const runDate = formatRunDate(new Date());
       if (response.gene_list.length === 0) {
         setError("No genes found. Please check your input.");
+        if (response.input_report) {
+          setNoGenesReport({
+            report: response.input_report,
+            vcfText: inputVcfText,
+            stampLines: runStampLines({
+              versions: response.run_versions,
+              geneMappingFields: payload?.geneMappingFields ?? ALL_GENE_MAPPING_FIELDS,
+              testType,
+              correction,
+              runDate,
+              annotationDataset: dataset,
+            }),
+            runDate,
+          });
+        }
         return false;
       }
 
@@ -146,6 +183,8 @@ function Home() {
           : null;
 
       setResultInputType(nextResultInputType);
+      setResultVcfText(inputVcfText);
+      setResultRunDate(runDate);
       setResultMappingFields({
         input: payload?.geneMappingFields ?? ALL_GENE_MAPPING_FIELDS,
         // A reference gene list is not mapped, so it has no mapping tools.
@@ -441,6 +480,7 @@ function Home() {
                 setError(null);
                 setIsLoading(false);
               }}
+              genomeBuild={genomeBuild}
             />
           </Box>
         ) : (
@@ -450,7 +490,10 @@ function Home() {
             submitToPanther={submitToPanther}
             annotationDataset={pantherId.dataset}
             correctionType={pantherId.correction}
+            testType={pantherId.testType}
+            runDate={resultRunDate}
             inputTypeUsed={resultInputType}
+            inputVcfText={resultVcfText}
             inputMappingFields={resultMappingFields.input}
             referenceMappingFields={resultMappingFields.reference}
             downloadsReady={downloadsReady}
@@ -468,6 +511,30 @@ function Home() {
           >
             <AlertTitle>Error</AlertTitle>
             {error}
+            {noGenesReport && (
+              <Box sx={{ mt: 1 }}>
+                <Button
+                  variant="outlined"
+                  color="inherit"
+                  size="small"
+                  onClick={() =>
+                    saveCsvFile(
+                      [
+                        ...noGenesReport.stampLines,
+                        createInputVariantReportCsv(
+                          noGenesReport.report,
+                          noGenesReport.vcfText !== null ? "chr:pos" : "rsId",
+                          noGenesReport.vcfText
+                        ),
+                      ].join("\n"),
+                      withRunDate("input_variant_report.csv", noGenesReport.runDate)
+                    )
+                  }
+                >
+                  Download Input Variant Report
+                </Button>
+              </Box>
+            )}
           </Alert>
         )}
 

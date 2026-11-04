@@ -3,7 +3,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
-from src.gene_cols import ALL_GENE_MAPPING_FIELDS, GeneMappingField
+from src.gene_cols import ALL_GENE_MAPPING_FIELDS, GeneColumn, GeneMappingField
 from src.query import (
     GeneListQuery,
     GeneQuery,
@@ -62,6 +62,14 @@ class GeneMappingsResponse(BaseModel):
 
     rsId_genes_map: dict[str, list[str]] = Field(
         ..., description="Mapping of variant key (rsID or chr:pos) to genes"
+    )
+
+    rsId_gene_sources: dict[str, dict[str, list[GeneColumn]]] = Field(
+        default_factory=dict,
+        description=(
+            "For each variant key and gene in rsId_genes_map, the selected gene "
+            "columns that produced the assignment"
+        ),
     )
 
 
@@ -169,6 +177,97 @@ class ReferenceListInput(SnpListInput):
         return input_type
 
 
+class VariantStatus(str, Enum):
+    annotated = "annotated"  # in rsId_genes_map
+    no_record = "no_record"  # AnnoQ returned no record for the input
+    no_gene = "no_gene"  # AnnoQ record, but no gene in the selected gene columns
+
+
+class VariantReportRow(BaseModel):
+    """What happened to one submitted variant (rsID or chr:pos)."""
+
+    input: str = Field(..., description="The variant as submitted")
+    variant_key: str | None = Field(
+        ...,
+        description=(
+            "Key of the matching AnnoQ record (the rsId_genes_map key); null for "
+            "no_record"
+        ),
+    )
+    status: VariantStatus
+    n_genes: int = Field(..., description="Genes mapped to the variant")
+
+
+class PantherMatch(str, Enum):
+    exact = "exact"  # PANTHER lists the identifier as submitted
+    version_suffix_removed = "version_suffix_removed"  # listed without ".N"
+    not_listed = "not_listed"  # in neither of PANTHER's mapped/unmapped lists
+
+
+class GeneIdentifierReportRow(BaseModel):
+    """Whether PANTHER mapped one submitted gene identifier."""
+
+    identifier: str = Field(..., description="Gene identifier sent to PANTHER")
+    mapped_by_panther: str = Field(
+        ...,
+        description=(
+            "'yes' or 'no' from PANTHER's input mapped/unmapped lists; "
+            "'not_listed' when PANTHER lists the identifier in neither"
+        ),
+    )
+    panther_listed_as: str | None = Field(
+        ..., description="The identifier as PANTHER lists it, or null"
+    )
+    panther_match: PantherMatch
+
+
+class InputReportSummary(BaseModel):
+    n_input: int = Field(..., description="Unique variants submitted")
+    n_annotated: int
+    n_no_record: int
+    n_no_gene: int
+    n_records_not_matched_to_input: int = Field(
+        ...,
+        description="AnnoQ records returned that match no submitted variant",
+    )
+    n_identifiers_submitted: int = Field(
+        ..., description="Unique gene identifiers in gene_list"
+    )
+    n_identifiers_mapped_reported_by_panther: int | None = Field(
+        ...,
+        description=(
+            "Entries in PANTHER's mapped input list; null when no "
+            "overrepresentation test was run"
+        ),
+    )
+    n_identifiers_matched_incl_suffix_rule: int | None = Field(
+        ...,
+        description=(
+            "Submitted identifiers with mapped_by_panther 'yes', counting "
+            "matches after removing a '.N' suffix; null when no "
+            "overrepresentation test was run"
+        ),
+    )
+    n_identifiers_not_mapped_by_panther: int | None
+    n_identifiers_not_listed_by_panther: int | None
+
+
+class InputReport(BaseModel):
+    """Accounts for every submitted variant and gene identifier."""
+
+    summary: InputReportSummary
+    variants: list[VariantReportRow] = Field(
+        ..., description="One row per unique submitted variant, in input order"
+    )
+    gene_identifiers: list[GeneIdentifierReportRow] | None = Field(
+        ...,
+        description=(
+            "One row per gene identifier sent to PANTHER; null when no "
+            "overrepresentation test was run"
+        ),
+    )
+
+
 class WorkflowGeneMappingsResponse(GeneMappingsResponse):
     """Workflow mapping response that also includes PANTHER gene metadata."""
 
@@ -179,6 +278,10 @@ class WorkflowGeneMappingsResponse(GeneMappingsResponse):
     gene_panther_mapping: dict[str, list[str]] = Field(
         ...,
         description="Mapping of gene symbol to one or more PANTHER Gene IDs.",
+    )
+    input_report: InputReport | None = Field(
+        default=None,
+        description="Status of each submitted variant and gene identifier.",
     )
 
 
@@ -218,6 +321,48 @@ class WorkflowOverrepresentationRequest(WorkflowInputRequest):
     )
 
 
+class RunVersions(BaseModel):
+    """Data and tool versions behind a run; null when not known."""
+
+    snpway_version: str = Field(..., description="SNPWay release that ran the analysis")
+    genome_build: str | None = Field(
+        ...,
+        description=(
+            "Genome build of AnnoQ's variant coordinates, from AnnoQ's /version; "
+            "null if that request failed"
+        ),
+    )
+    annoq_panel: str | None = Field(
+        ...,
+        description=(
+            "AnnoQ variant panel release (data_version in AnnoQ's /version); "
+            "null if that request failed"
+        ),
+    )
+    dbsnp_release: str | None = Field(
+        ...,
+        description=(
+            "dbSNP build of the rsIDs, from AnnoQ's /version; "
+            "null if that request failed"
+        ),
+    )
+    annotator_versions: dict[str, str | None] = Field(
+        ...,
+        description=(
+            "Version of each annotation tool (ANNOVAR, SnpEff, VEP) and of the "
+            "PEREGRINE enhancer links behind the gene mapping sources of the "
+            "input and any SNP reference list, from AnnoQ's /annotations "
+            "metadata; only those used; null for one if that request failed"
+        ),
+    )
+    panther_version: str | None = Field(
+        ..., description="PANTHER annot_version_release_date"
+    )
+    panther_tool_release: str | None = Field(
+        ..., description="PANTHER tool_release_date"
+    )
+
+
 class WorkflowOverrepresentationResponse(WorkflowGeneMappingsResponse):
     """Compact overrepresentation response used by the UI and client libraries."""
 
@@ -231,4 +376,8 @@ class WorkflowOverrepresentationResponse(WorkflowGeneMappingsResponse):
             "Genes mapped from the custom reference list, or null when the "
             "default PANTHER reference (all human genes) was used."
         ),
+    )
+    run_versions: RunVersions | None = Field(
+        default=None,
+        description="SNPWay, AnnoQ and PANTHER versions, for stamping downloads.",
     )

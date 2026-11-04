@@ -5,9 +5,15 @@ import json
 import httpx
 import pandas as pd
 import pytest
+from fastapi.testclient import TestClient
 
 from src import annoq
+from src.gene_cols import ALL_GENE_MAPPING_FIELDS
+from src.models import WorkflowOverrepresentationRequest
 from src.query import IdsQuery, InputType, RsIdListQuery
+from src.version import SNPWAY_VERSION
+
+ALL_FIELDS = [field.value for field in ALL_GENE_MAPPING_FIELDS]
 
 
 @pytest.fixture
@@ -255,3 +261,153 @@ def test_download_data_reports_annoq_status(monkeypatch):
         Exception, match="Failed to download data: AnnoQ returned HTTP 404 Not Found"
     ):
         asyncio.run(annoq.download_data("http://annoq.test/downloads/x.txt"))
+
+
+# Shape of AnnoQ's /annotations metadata: the variant fields carry the panel
+# release, each tool's top-level entry carries the tool version, and the
+# enhancer_linked_genes field's parent entry carries the PEREGRINE release.
+ANNOQ_METADATA = {
+    "results": [
+        {"id": "1", "parent_id": "0", "leaf": False, "name": "Basic Info", "version": None},
+        {"id": "7", "parent_id": "0", "leaf": False, "name": "IMAGE Enhancer Linked Functional Annotations", "version": "Initial Release"},
+        {"id": "24", "parent_id": "7", "leaf": True, "name": "enhancer_linked_genes", "api_field": "enhancer_linked_genes", "version": None},
+        {"id": "2", "parent_id": "1", "leaf": True, "name": "chr", "api_field": "chr", "version": "HRC.r1-1"},
+        {"id": "6", "parent_id": "1", "leaf": True, "name": "rs_dbSNP151", "api_field": "rs_dbSNP151", "version": "HRC.r1-1"},
+        {"id": "26", "parent_id": "0", "leaf": False, "name": "ANNOVAR", "version": "6/7/2020 23:56"},
+        {"id": "36", "parent_id": "26", "leaf": True, "name": "ANNOVAR_ensembl_Gene_ID", "api_field": "ANNOVAR_ensembl_Gene_ID", "version": None},
+        {"id": "132", "parent_id": "0", "leaf": False, "name": "VEP", "version": "ensembl-vep-release-107"},
+        {"id": "208", "parent_id": "0", "leaf": False, "name": "SnpEff", "version": "4.3t"},
+        {"id": "495", "parent_id": "0", "leaf": False, "name": "others", "version": "dbNSFP v4.3c"},
+    ]
+}
+
+
+def _overrep_request(fields, reference=None):
+    return WorkflowOverrepresentationRequest(
+        input_type="rsIdList",
+        rsIdListQuery={"rsIdList": ["rs1"]},
+        annotDataSet="GO:0008150",
+        geneMappingFields=fields,
+        referenceList=reference,
+    )
+
+
+def test_startup_reads_annoq_versions(main_module, monkeypatch):
+    requested = []
+    _fake_annoq_client(
+        monkeypatch,
+        {
+            "/annotations": httpx.Response(200, json=ANNOQ_METADATA),
+            "/version.json": httpx.Response(
+                200, json={"version": "1.3.11", "releaseDate": "2026-11-03"}
+            ),
+            "/version": httpx.Response(200, json=ANNOQ_VERSION),
+        },
+    )
+    real_get = httpx.AsyncClient.get
+
+    async def recording_get(self, url, **kwargs):
+        requested.append(url)
+        return await real_get(self, url, **kwargs)
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", recording_get)
+    monkeypatch.setattr(annoq, "annoq_data_versions", {})
+    monkeypatch.setattr(annoq, "annotator_versions", {})
+
+    with TestClient(main_module.app):  # runs the startup hook
+        versions = main_module._run_versions(_overrep_request(ALL_FIELDS))
+    assert versions.genome_build == "GRCh37/hg19"
+    assert versions.annoq_panel == "HRC.r1-1"
+    assert versions.dbsnp_release == "151"
+    assert versions.annotator_versions == {
+        "ANNOVAR": "6/7/2020 23:56",
+        "SnpEff": "4.3t",
+        "VEP": "ensembl-vep-release-107",
+        "PEREGRINE": "Initial Release",
+    }
+    assert requested == [
+        "http://annoq.test/version",
+        "http://annoq-site.test/version.json",
+        "http://annoq.test/annotations",
+    ]
+
+
+@pytest.mark.parametrize(
+    "fields, reference_fields, expected",
+    [
+        (ALL_FIELDS, None, ["ANNOVAR", "SnpEff", "VEP", "PEREGRINE"]),
+        (["ANNOVAR_refseq_Gene_ID"], None, ["ANNOVAR"]),
+        (["VEP_refseq_Gene_Name", "enhancer_linked_genes"], None, ["VEP", "PEREGRINE"]),
+        (["enhancer_linked_genes"], None, ["PEREGRINE"]),
+        # A SNP reference list adds the tools behind its own sources.
+        (["enhancer_linked_genes"], ["SnpEff_ensembl_Gene_ID"], ["SnpEff", "PEREGRINE"]),
+        (["SnpEff_refseq_Gene_ID"], ["enhancer_linked_genes"], ["SnpEff", "PEREGRINE"]),
+    ],
+)
+def test_run_versions_list_only_the_tools_used(
+    main_module, monkeypatch, fields, reference_fields, expected
+):
+    monkeypatch.setattr(annoq, "annoq_data_versions", ANNOQ_VERSION)
+    monkeypatch.setattr(
+        annoq, "annotator_versions", annoq.parse_annotator_versions(ANNOQ_METADATA)
+    )
+    reference = (
+        None
+        if reference_fields is None
+        else {
+            "input_type": "rsIdList",
+            "rsIdListQuery": {"rsIdList": ["rs2"]},
+            "geneMappingFields": reference_fields,
+        }
+    )
+
+    versions = main_module._run_versions(_overrep_request(fields, reference))
+
+    assert list(versions.annotator_versions) == expected
+    assert versions.snpway_version == SNPWAY_VERSION
+    assert versions.genome_build == "GRCh37/hg19"
+
+
+def test_run_versions_unknown_when_metadata_failed(main_module, monkeypatch):
+    _fake_annoq_client(monkeypatch, httpx.ConnectError("unreachable"))
+    monkeypatch.setattr(annoq, "annoq_data_versions", {"genome_build": "stale"})
+    monkeypatch.setattr(annoq, "annotator_versions", {"VEP": "stale"})
+
+    asyncio.run(annoq.load_annoq_metadata())
+
+    versions = main_module._run_versions(
+        _overrep_request(["VEP_ensembl_Gene_ID", "enhancer_linked_genes"])
+    )
+    assert versions.genome_build is None
+    assert versions.annoq_panel is None
+    assert versions.dbsnp_release is None
+    assert versions.annotator_versions == {"VEP": None, "PEREGRINE": None}
+
+
+def test_ensure_annoq_metadata_retries_after_a_failed_startup(monkeypatch):
+    monkeypatch.setattr(annoq, "annoq_data_versions", {})
+    monkeypatch.setattr(annoq, "annotator_versions", {})
+    _fake_annoq_client(
+        monkeypatch,
+        {
+            "/annotations": httpx.Response(200, json=ANNOQ_METADATA),
+            "/version.json": httpx.Response(404),
+            "/version": httpx.Response(200, json=ANNOQ_VERSION),
+        },
+    )
+
+    asyncio.run(annoq.ensure_annoq_metadata())
+
+    assert annoq.annoq_data_versions["genome_build"] == "GRCh37/hg19"
+    assert annoq.annotator_versions["SnpEff"] == "4.3t"
+
+
+def test_peregrine_version_prefers_the_field_version():
+    metadata = {
+        "results": [
+            {"id": "7", "parent_id": "0", "leaf": False, "name": "IMAGE Enhancer Linked Functional Annotations", "version": "Initial Release"},
+            {"id": "24", "parent_id": "7", "leaf": True, "name": "enhancer_linked_genes", "api_field": "enhancer_linked_genes", "version": "v2"},
+        ]
+    }
+
+    assert annoq.parse_annotator_versions(metadata) == {"PEREGRINE": "v2"}

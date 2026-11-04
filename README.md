@@ -4,6 +4,10 @@ This is a project that provides an application to run an overrepresentation anal
 
 The API utilizes [AnnoQ](http://annoq.org/) to get a list of genes from a list of SNPs. The list of genes is then used to run an overrepresentation analysis using [PantherDB](https://pantherdb.org/)
 
+The same workflow can be run from R with the [AnnoQR](https://github.com/USCbiostats/AnnoQR) package: `remotes::install_github("USCbiostats/AnnoQR")`.
+
+[AGENTS.md](AGENTS.md) documents the API and conventions for programmatic and agent integration.
+
 ## Installation
 
 To install the project, clone the repository.
