@@ -1,6 +1,18 @@
-import { WorkflowStreamEvent } from "./models";
+import { AnnoqVersion, WorkflowStreamEvent } from "./models";
 
 export const MAX_OVERREP_GENE_COUNT = 100000;
+
+// Genome build, dbSNP release and other versions of the AnnoQ data the backend
+// queries. AnnoQ owns these, since they depend on which index it points to.
+export const fetchAnnoqVersion = async (): Promise<AnnoqVersion> => {
+  const response = await fetch(
+    `${import.meta.env.VITE_BACKEND_BASE_URL ?? ""}/annoq/version`
+  );
+  if (!response.ok) {
+    await throwResponseError(response);
+  }
+  return response.json();
+};
 
 const throwResponseError = async (response: Response): Promise<never> => {
   let detail = `Request failed with status ${response.status}`;

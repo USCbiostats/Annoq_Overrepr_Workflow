@@ -76,6 +76,21 @@ export type WorkflowStreamEvent =
     | WorkflowErrorEvent
     | { event: "heartbeat" };
 
+// Versions of the AnnoQ data SNPWay queries, from GET /annoq/version (passed
+// through from annoq-api-v2's /version, issue #80), plus the AnnoQ release
+// from the AnnoQ site's /version.json and that site's URL (ANNOQ_SITE_URL in
+// the backend's .env). Any version may be null when AnnoQ does not report it.
+export type AnnoqVersion = {
+    api_version?: string | null;
+    data_version?: string | null;
+    genome_build?: string | null;
+    dbsnp_release?: string | null;
+    wgsa_version?: string | null;
+    annoq_version?: string | null;
+    annoq_release_date?: string | null;
+    annoq_site_url?: string | null;
+};
+
 // Client-side view of one stage, built from its stage events.
 export type WorkflowStageProgress = {
     status: WorkflowStageStatus;

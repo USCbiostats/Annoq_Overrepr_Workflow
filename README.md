@@ -32,6 +32,15 @@ To install the project, clone the repository.
     pip install -r requirements.txt
     ```
 
+5. Create `backend/.env` from the sample for your AnnoQ dataset, then edit it as necessary (see [backend/README.md](backend/README.md#configuration-env) for each setting).
+
+    ```bash
+    cp .env.hrc .env      # HRC (GRCh37/hg19), or:
+    cp .env.topmed .env   # TOPMed (GRCh38/hg38)
+    ```
+
+    Check `GA_MEASUREMENT_ID` and `GA_API_SECRET` for your deployment. Each sample already pairs its AnnoQ API (`ANNOTATION_API_V2`, `ANNOTATION_DOWNLOAD_V2`) with that dataset's rsID field (`ANNOQ_RSID_FIELD`); change them together.
+
 ## Building the Frontend
 
 Before running the application, the frontend must be built and the files must be moved to the backend directory.
@@ -71,7 +80,7 @@ To run the API and the built frontend, use the following command:
 python main.py
 ```
 
-The port comes from `PORT` in `backend/.env` (see `backend/.env.example`); it defaults to 8002 when unset. The API and the frontend are both served on this port.
+The port comes from `PORT` in `backend/.env` (see `backend/.env.hrc` and `backend/.env.topmed`); it defaults to 8002 when unset. The API and the frontend are both served on this port.
 
 During development you can instead run uvicorn directly, which reloads on code changes. Its `--port` option overrides `PORT`:
 

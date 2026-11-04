@@ -6,6 +6,8 @@ from fastapi.testclient import TestClient
 # src.config reads these at import time; tests never call the real services.
 os.environ.setdefault("ANNOTATION_API_V2", "http://annoq.test/graphql")
 os.environ.setdefault("ANNOTATION_DOWNLOAD_V2", "http://annoq.test/download")
+os.environ.setdefault("ANNOQ_RSID_FIELD", "rs_dbSNP151")
+os.environ.setdefault("ANNOQ_SITE_URL", "http://annoq-site.test")
 os.environ.setdefault("GA_MEASUREMENT_ID", "test")
 os.environ.setdefault("GA_API_SECRET", "test")
 

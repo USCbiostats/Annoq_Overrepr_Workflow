@@ -25,10 +25,12 @@ import {
 } from "../constants";
 import {
   streamWorkflowOverrepresentation,
+  fetchAnnoqVersion,
   MAX_OVERREP_GENE_COUNT,
 } from "../apis";
 import Footer from "../components/Footer";
 import {
+  AnnoqVersion,
   WorkflowOverrepresentationResponse,
   WorkflowStreamEvent,
 } from "../models";
@@ -66,6 +68,26 @@ function Home() {
   // Stop any running analysis when the page is left or restarted from the
   // Home link or logo.
   useEffect(() => () => runAbortRef.current?.abort(), []);
+
+  // The genome build and AnnoQ release come from AnnoQ, which knows which
+  // index it serves; the backend's .env picks the AnnoQ site. Each is left out
+  // of the page when AnnoQ does not report it.
+  const [annoqVersion, setAnnoqVersion] = useState<AnnoqVersion | null>(null);
+  useEffect(() => {
+    let active = true;
+    fetchAnnoqVersion()
+      .then((version) => {
+        if (active) setAnnoqVersion(version);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
+  const genomeBuild = annoqVersion?.genome_build;
+  const annoqRelease = annoqVersion?.annoq_version;
+  // annoq.org until the backend answers: the AnnoQ project's home either way.
+  const annoqSiteUrl = annoqVersion?.annoq_site_url ?? "https://annoq.org";
 
   const onRunTest = async (
     payload: any,
@@ -333,7 +355,8 @@ function Home() {
                   sx={{ maxWidth: 800 }}
                 >
                   Start with SNPs or rsIDs, collect gene mappings through AnnoQ,
-                  then launch PANTHER enrichment without switching tools. Please note, SNPWay is based on GRCh37/hg19.
+                  then launch PANTHER enrichment without switching tools.
+                  {genomeBuild && ` Please note, SNPWay is based on ${genomeBuild}.`}
                 </Typography>
               </Box>
               <Stack direction="row" spacing={2}>
@@ -357,7 +380,7 @@ function Home() {
                 <Button
                   variant="outlined"
                   color="secondary"
-                  onClick={() => window.open("https://annoq.org/", "_blank")}
+                  onClick={() => window.open(`${annoqSiteUrl}/`, "_blank")}
                   sx={{ whiteSpace: "nowrap" }}
                 >
                   Visit AnnoQ
@@ -484,15 +507,15 @@ function Home() {
           >
             Powered by{" "}
             <Link
-              href="https://annoq.org/"
+              href={`${annoqSiteUrl}/`}
               target="_blank"
               rel="noopener"
               underline="hover"
               sx={{ fontWeight: 600 }}
             >
               Annoq
-            </Link>{" "}
-            version 1.3 and{" "}
+            </Link>
+            {annoqRelease && ` version ${annoqRelease}`} and{" "}
             <Link
               href="https://pantherdb.org/"
               target="_blank"
@@ -505,13 +528,13 @@ function Home() {
             {". "}
             For the data version of individual tools in AnnoQ, please visit:{" "}
             <Link
-              href="http://annoq.org/version"
+              href={`${annoqSiteUrl}/version`}
               target="_blank"
               rel="noopener"
               underline="hover"
               sx={{ fontWeight: 600 }}
             >
-              annoq.org/version
+              {`${annoqSiteUrl.replace(/^https?:\/\//, "")}/version`}
             </Link>
           </Typography>
         </Box>
