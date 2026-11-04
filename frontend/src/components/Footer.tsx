@@ -75,6 +75,9 @@ const Footer: React.FC = () => {
                 <FooterLink to="/api">API Guide</FooterLink>
               </ListItem>
               <ListItem disableGutters>
+                <FooterLink to="/news">News</FooterLink>
+              </ListItem>
+              <ListItem disableGutters>
                 <ExternalLink
                   href="https://github.com/USCbiostats/Annoq_Overrepr_Workflow"
                   target="_blank"
