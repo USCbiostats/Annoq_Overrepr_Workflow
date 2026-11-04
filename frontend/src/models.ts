@@ -85,11 +85,11 @@ export type RunVersions = {
     snpway_version?: string;
     annoq_version: string | null; // null: the AnnoQ site's /version.json could not be read
     genome_build: string | null; // null: AnnoQ's /version could not be read
-    annoq_panel: string | null; // null: AnnoQ's metadata could not be read at backend startup
+    annoq_panel: string | null; // null: AnnoQ's /version could not be read for this run
     dbsnp_release: string | null;
     // Only the annotation tools (ANNOVAR, SnpEff, VEP) and PEREGRINE enhancer links
     // behind the run's gene mapping sources; null: AnnoQ's metadata could not be
-    // read at backend startup
+    // read for this run
     annotator_versions?: Record<string, string | null>;
     panther_version: string | null; // PANTHER annot_version_release_date
     panther_tool_release: string | null; // PANTHER tool_release_date

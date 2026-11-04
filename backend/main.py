@@ -2,7 +2,6 @@
 
 import asyncio
 import warnings
-from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Awaitable, Callable
 
 import orjson
@@ -65,16 +64,7 @@ class NoCacheStaticFiles(StaticFiles):
 
 warnings.filterwarnings("ignore")
 
-@asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    # One AnnoQ metadata request per process, for the AnnoQ run versions.
-    await annoq.load_annoq_metadata()
-    yield
-
-
-app = FastAPI(
-    default_response_class=ORJSONResponse, lifespan=lifespan, version=SNPWAY_VERSION
-)
+app = FastAPI(default_response_class=ORJSONResponse, version=SNPWAY_VERSION)
 MAX_PANTHER_GENE_COUNT = 100000
 
 origins = ["*"]
@@ -220,9 +210,9 @@ async def _map_request_lists(
 ) -> tuple[
     list[str], dict[str, list[str]], GeneSources, list[str] | None, VariantAccounting
 ]:
-    """Map the input list and, if given, the reference list to genes."""
-    # Versions for the download stamp, in case AnnoQ was down at startup.
-    await annoq.ensure_annoq_metadata()
+    """Map the input list and, if given, the reference list to genes. Also
+    reads the AnnoQ versions for this run's download stamp, alongside the
+    mapping."""
     reference_list = request.referenceList
     jobs = [
         run_stage(
@@ -245,6 +235,10 @@ async def _map_request_lists(
                 ),
             )
         )
+
+    # Last, so results[0] and results[1] stay the input and reference lists.
+    # It never raises: versions AnnoQ cannot report are stamped "unknown".
+    jobs.append(annoq.load_annoq_metadata())
 
     results = await _gather_or_cancel(*jobs)
     all_unique_genes, rs_id_gene_mapping, rs_id_gene_sources, variants = results[0]

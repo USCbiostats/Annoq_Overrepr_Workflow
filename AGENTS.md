@@ -60,8 +60,9 @@ Overrepresentation requests add `annotDataSet` (required), `correction`
   (`ANNOQ_SITE_URL` in `backend/.env`; `null` where the site does not publish
   it, as topmed.annoq.org does not yet). `genome_build`, `annoq_panel` and
   `dbsnp_release` come from AnnoQ's `/version`, and the tool versions from
-  AnnoQ's `/annotations` metadata. All are read at backend startup, retried on
-  the next run if AnnoQ could not be reached, and `null` while unknown. The `panther_*` values are `null` when no test ran.
+  AnnoQ's `/annotations` metadata. All are read from AnnoQ at the start of
+  each run, alongside the variant mapping, and are `null` when AnnoQ could not
+  report them. The `panther_*` values are `null` when no test ran.
 
 **Stream events** (one JSON object per line; see the handler's docstring):
 `stage` (`input`, `reference`, `overrepresentation`, `gene_details`), `result`
@@ -221,8 +222,10 @@ count the leading `#` lines and pass that count as `skiprows` (pandas) or
   analysis at a time with no parallel requests to the public services, and be
   patient; the stream endpoint reports per-batch progress. A failed AnnoQ batch
   stops the run, and the error names that batch.
-- **AnnoQ versions** (the version stamp) are read at backend startup and retried
-  on the next run if that failed. Restart the backend to refresh them. Annotation data is queried live on every run.
+- **AnnoQ versions** (the version stamp) are read from AnnoQ on every
+  overrepresentation run, so a new AnnoQ release is stamped without restarting
+  the backend. A failed read does not stop the run; those versions are written
+  as `unknown`. Annotation data is also queried live on every run.
 
 ## Known gaps
 

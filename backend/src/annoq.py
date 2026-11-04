@@ -35,10 +35,10 @@ ANNOQ_IDS_BATCH_SIZE = 50000
 ANNOQ_RSIDS_BATCH_SIZE = 5000
 # How long SNPWay waits for each AnnoQ request (download URL and file download).
 ANNOQ_TIMEOUT_SECONDS = 300.0
-# How long the startup request for AnnoQ's annotation metadata may take.
+# How long the request for AnnoQ's annotation metadata may take.
 ANNOQ_METADATA_TIMEOUT_SECONDS = 30.0
-# Read from AnnoQ at startup by load_annoq_metadata, and again by
-# ensure_annoq_metadata while either is empty; empty until then or if the
+# Read from AnnoQ by load_annoq_metadata at the start of every overrepresentation
+# run, for that run's version stamp; empty until the first run or if the
 # request failed (downloads then say "unknown").
 # AnnoQ's /version, e.g. {"genome_build": "GRCh37/hg19", "dbsnp_release": "151",
 # "data_version": "HRC.r1-1"}, plus the AnnoQ release from the AnnoQ site.
@@ -434,33 +434,29 @@ def parse_annotator_versions(metadata: Any) -> dict[str, str]:
 
 
 async def load_annoq_metadata() -> None:
-    """Fetch the versions of the AnnoQ data and keep them for the life of the
-    process: genome build, dbSNP release and panel release from AnnoQ's /version
-    (get_annoq_version), and annotation tool versions from its /annotations
-    metadata. A failure leaves that part empty (downloads say "unknown")."""
+    """Read the versions of the AnnoQ data from AnnoQ for the run about to
+    start, so its downloads carry the versions AnnoQ serves now: genome build,
+    dbSNP release, panel release and AnnoQ release (get_annoq_version), and
+    annotation tool versions from its /annotations metadata. A failure leaves
+    that part empty (downloads say "unknown") and does not stop the run."""
     global annoq_data_versions, annotator_versions
     try:
-        annoq_data_versions = await get_annoq_version()
+        data_versions = await get_annoq_version()
     except Exception as e:
         print(f"AnnoQ version unavailable, data versions unknown: {e}")
-        annoq_data_versions = {}
+        data_versions = {}
     try:
         async with httpx.AsyncClient(
             verify=False, timeout=ANNOQ_METADATA_TIMEOUT_SECONDS
         ) as client:
             response = await client.get(annoq_metadata_url())
             response.raise_for_status()
-        annotator_versions = parse_annotator_versions(response.json())
+        tool_versions = parse_annotator_versions(response.json())
     except (httpx.HTTPError, ValueError) as e:
         print(f"AnnoQ metadata unavailable, annotation tool versions unknown: {e}")
-        annotator_versions = {}
-
-
-async def ensure_annoq_metadata() -> None:
-    """Retry load_annoq_metadata while part of it is missing, e.g. when AnnoQ
-    could not be reached at startup."""
-    if not annoq_data_versions or not annotator_versions:
-        await load_annoq_metadata()
+        tool_versions = {}
+    # Replaced together, so a run never stamps a mix of two reads.
+    annoq_data_versions, annotator_versions = data_versions, tool_versions
 
 
 def annoq_version_url() -> str:

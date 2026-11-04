@@ -5,10 +5,10 @@ import json
 import httpx
 import pandas as pd
 import pytest
-from fastapi.testclient import TestClient
 
 from src import annoq
 from src.gene_cols import ALL_GENE_MAPPING_FIELDS
+from src.input_report import VariantAccounting
 from src.models import WorkflowOverrepresentationRequest
 from src.query import IdsQuery, InputType, RsIdListQuery
 from src.version import SNPWAY_VERSION
@@ -292,7 +292,7 @@ def _overrep_request(fields, reference=None):
     )
 
 
-def test_startup_reads_annoq_versions(main_module, monkeypatch):
+def test_load_annoq_metadata_reads_annoq_versions(main_module, monkeypatch):
     requested = []
     _fake_annoq_client(
         monkeypatch,
@@ -314,8 +314,9 @@ def test_startup_reads_annoq_versions(main_module, monkeypatch):
     monkeypatch.setattr(annoq, "annoq_data_versions", {})
     monkeypatch.setattr(annoq, "annotator_versions", {})
 
-    with TestClient(main_module.app):  # runs the startup hook
-        versions = main_module._run_versions(_overrep_request(ALL_FIELDS))
+    asyncio.run(annoq.load_annoq_metadata())
+
+    versions = main_module._run_versions(_overrep_request(ALL_FIELDS))
     assert versions.annoq_version == "1.3.11"
     assert versions.genome_build == "GRCh37/hg19"
     assert versions.annoq_panel == "HRC.r1-1"
@@ -386,22 +387,50 @@ def test_run_versions_unknown_when_metadata_failed(main_module, monkeypatch):
     assert versions.annotator_versions == {"VEP": None, "PEREGRINE": None}
 
 
-def test_ensure_annoq_metadata_retries_after_a_failed_startup(monkeypatch):
-    monkeypatch.setattr(annoq, "annoq_data_versions", {})
-    monkeypatch.setattr(annoq, "annotator_versions", {})
+def test_load_annoq_metadata_replaces_versions_from_an_earlier_run(monkeypatch):
+    # Versions read for an earlier run, before AnnoQ released 1.3.12.
+    monkeypatch.setattr(
+        annoq,
+        "annoq_data_versions",
+        {**ANNOQ_VERSION, "annoq_version": "1.3.11"},
+    )
+    monkeypatch.setattr(annoq, "annotator_versions", {"SnpEff": "4.3s"})
     _fake_annoq_client(
         monkeypatch,
         {
             "/annotations": httpx.Response(200, json=ANNOQ_METADATA),
-            "/version.json": httpx.Response(404),
+            "/version.json": httpx.Response(200, json={"version": "1.3.12"}),
             "/version": httpx.Response(200, json=ANNOQ_VERSION),
         },
     )
 
-    asyncio.run(annoq.ensure_annoq_metadata())
+    asyncio.run(annoq.load_annoq_metadata())
 
-    assert annoq.annoq_data_versions["genome_build"] == "GRCh37/hg19"
+    assert annoq.annoq_data_versions["annoq_version"] == "1.3.12"
     assert annoq.annotator_versions["SnpEff"] == "4.3t"
+
+
+def test_every_run_reads_the_annoq_versions(client, main_module, monkeypatch):
+    loads = []
+
+    async def recording_load():
+        loads.append(True)
+
+    async def no_genes(snp_list, list_label="Input", on_progress=None):
+        return [], {}, {}, VariantAccounting(rows=[], records_not_matched_to_input=0)
+
+    monkeypatch.setattr(main_module.annoq, "load_annoq_metadata", recording_load)
+    monkeypatch.setattr(main_module, "_run_mapping_pipeline", no_genes)
+    body = {
+        "input_type": "rsIdList",
+        "rsIdListQuery": {"rsIdList": ["rs1"]},
+        "annotDataSet": "GO:0008150",
+    }
+
+    for path in ("/workflow/overrepresentation", "/workflow/overrepresentation/stream"):
+        assert client.post(path, json=body).status_code == 200
+
+    assert len(loads) == 2
 
 
 def test_peregrine_version_prefers_the_field_version():
