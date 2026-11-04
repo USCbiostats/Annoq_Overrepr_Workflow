@@ -264,7 +264,7 @@ def test_endpoint_returns_input_report(client, fake_report_services):
 
 
 def test_endpoint_returns_run_versions(client, fake_report_services, monkeypatch):
-    # AnnoQ's /version and the AnnoQ release as read at startup; its
+    # AnnoQ's /version and the AnnoQ release as read for the run; its
     # /annotations metadata was not read.
     monkeypatch.setattr(
         annoq,

@@ -5,6 +5,7 @@ import NotFound from "./pages/NotFound";
 import About from "./pages/About";
 import Tutorial from "./pages/Tutorial";
 import API from "./pages/API";
+import News from "./pages/News";
 import ResultsInterpretation from "./pages/ResultsInterpretation";
 import { ThemeProvider } from "@mui/material/styles";
 import theme from "./theme/theme";
@@ -32,6 +33,7 @@ function App() {
           element={<ResultsInterpretation />}
         />
         <Route path="/api" element={<API />} />
+        <Route path="/news" element={<News />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </ThemeProvider>
