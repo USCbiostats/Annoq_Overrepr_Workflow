@@ -22,6 +22,12 @@ def _read_port() -> int:
 class Config:
     annotation_api_v2: str
     annotation_download_v2: str
+    # AnnoQ's rsID field, which differs by dataset: rs_dbSNP151 on HRC,
+    # rs_dbSNP on TOPMed. Must match the API in annotation_api_v2.
+    annoq_rsid_field: str
+    # The AnnoQ site for that dataset (https://annoq.org for HRC). SNPWay reads
+    # the AnnoQ release version from its /version.json and links to it.
+    annoq_site_url: str
     ga_measurement_id: str
     ga_api_secret: str
     # Port used by `python main.py`; `uvicorn ... --port` overrides it.
@@ -31,6 +37,8 @@ class Config:
 config = Config(
     annotation_api_v2=os.environ["ANNOTATION_API_V2"],
     annotation_download_v2=os.environ["ANNOTATION_DOWNLOAD_V2"],
+    annoq_rsid_field=os.environ["ANNOQ_RSID_FIELD"],
+    annoq_site_url=os.environ["ANNOQ_SITE_URL"].rstrip("/"),
     ga_measurement_id=os.environ["GA_MEASUREMENT_ID"],
     ga_api_secret=os.environ["GA_API_SECRET"],
     port=_read_port(),

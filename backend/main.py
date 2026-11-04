@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.responses import FileResponse
 
 from src.analytics import send_event
-from src.annoq import get_annoq_df, get_rsid_gene_mapping
+from src.annoq import get_annoq_df, get_annoq_version, get_rsid_gene_mapping
 from src.config import config
 from src.models import (
     OverrepresentationResultItem,
@@ -499,6 +499,18 @@ async def workflow_overrepresentation_stream(
         media_type="application/x-ndjson",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@app.get("/annoq/version")
+async def annoq_version() -> dict[str, Any]:
+    """Versions of the AnnoQ data SNPWay queries (genome build, dbSNP release,
+    data and WGSA versions), passed through from AnnoQ's /version, plus the
+    AnnoQ release (annoq_version, annoq_release_date) from the AnnoQ site's
+    /version.json and that site's URL (annoq_site_url)."""
+    try:
+        return await get_annoq_version()
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))
 
 
 # Add the build folder that contains the react app
