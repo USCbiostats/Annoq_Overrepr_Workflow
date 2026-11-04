@@ -325,6 +325,13 @@ class RunVersions(BaseModel):
     """Data and tool versions behind a run; null when not known."""
 
     snpway_version: str = Field(..., description="SNPWay release that ran the analysis")
+    annoq_version: str | None = Field(
+        ...,
+        description=(
+            "AnnoQ release, from the AnnoQ site's /version.json (ANNOQ_SITE_URL); "
+            "null if that site does not publish it or the request failed"
+        ),
+    )
     genome_build: str | None = Field(
         ...,
         description=(

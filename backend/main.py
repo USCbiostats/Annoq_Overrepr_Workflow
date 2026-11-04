@@ -300,6 +300,7 @@ def _run_versions(
         fields += reference_list.geneMappingFields
     return RunVersions(
         snpway_version=SNPWAY_VERSION,
+        annoq_version=annoq.annoq_data_versions.get("annoq_version"),
         genome_build=annoq.annoq_data_versions.get("genome_build"),
         annoq_panel=annoq.annoq_data_versions.get("data_version"),
         dbsnp_release=annoq.annoq_data_versions.get("dbsnp_release"),

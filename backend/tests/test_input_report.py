@@ -264,11 +264,17 @@ def test_endpoint_returns_input_report(client, fake_report_services):
 
 
 def test_endpoint_returns_run_versions(client, fake_report_services, monkeypatch):
-    # AnnoQ's /version as read at startup; its /annotations metadata was not read.
+    # AnnoQ's /version and the AnnoQ release as read at startup; its
+    # /annotations metadata was not read.
     monkeypatch.setattr(
         annoq,
         "annoq_data_versions",
-        {"genome_build": "GRCh37/hg19", "dbsnp_release": "151", "data_version": "HRC.r1-1"},
+        {
+            "genome_build": "GRCh37/hg19",
+            "dbsnp_release": "151",
+            "data_version": "HRC.r1-1",
+            "annoq_version": "1.3.11",
+        },
     )
     monkeypatch.setattr(annoq, "annotator_versions", {})
 
@@ -276,6 +282,7 @@ def test_endpoint_returns_run_versions(client, fake_report_services, monkeypatch
 
     assert body["run_versions"] == {
         "snpway_version": "1.1.0",
+        "annoq_version": "1.3.11",
         "genome_build": "GRCh37/hg19",
         "annoq_panel": "HRC.r1-1",
         "dbsnp_release": "151",
