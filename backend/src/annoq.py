@@ -239,7 +239,7 @@ def variant_key(row: pd.Series, force_chr_pos_keys: bool = False) -> str:
     """Key of an AnnoQ record in rsId_genes_map: chr:pos, or the rsID field."""
     if force_chr_pos_keys:
         return _row_to_chr_pos(row)
-    return str(row["rs_dbSNP151"]).strip()
+    return str(row[config.annoq_rsid_field]).strip()
 
 
 def get_rsid_gene_mapping(
@@ -337,7 +337,11 @@ def create_gql_query(input_type: InputType, query: Any) -> Any:
 
 
 def _get_query_fields() -> list[str]:
-    return ["chr", "pos"] + [field.value for field in GENE_COLS] + ["rs_dbSNP151"]
+    return (
+        ["chr", "pos"]
+        + [field.value for field in GENE_COLS]
+        + [config.annoq_rsid_field]
+    )
 
 
 def generate_gql_download_query(
@@ -461,6 +465,66 @@ async def load_annoq_metadata() -> None:
         print(f"AnnoQ metadata unavailable, versions unknown: {e}")
         annoq_panel_release = None
         annotator_versions = {}
+
+
+def annoq_version_url() -> str:
+    """AnnoQ's version endpoint, beside its GraphQL endpoint
+    (https://api-v2.annoq.org/graphql -> https://api-v2.annoq.org/version)."""
+    base = config.annotation_api_v2.rstrip("/")
+    if base.endswith("/graphql"):
+        base = base[: -len("/graphql")]
+    return f"{base}/version"
+
+
+def annoq_site_version_url() -> str:
+    """The AnnoQ site's release version, e.g. https://annoq.org/version.json
+    (annoq-site-v2 issue #23)."""
+    return f"{config.annoq_site_url}/version.json"
+
+
+async def _get_annoq_release(client: httpx.AsyncClient) -> dict[str, Any]:
+    """The AnnoQ release (e.g. 1.3.11) from the AnnoQ site, plus the site's URL.
+    The release is optional: a site that does not publish /version.json leaves
+    it null rather than hiding the data versions, which come from the API."""
+    release: dict[str, Any] = {"annoq_version": None, "annoq_release_date": None}
+    try:
+        response = await client.get(annoq_site_version_url())
+        response.raise_for_status()
+        info = response.json()
+        release = {
+            "annoq_version": info.get("version"),
+            "annoq_release_date": info.get("releaseDate"),
+        }
+    except (httpx.HTTPError, ValueError, AttributeError):
+        pass
+    return {**release, "annoq_site_url": config.annoq_site_url}
+
+
+async def get_annoq_version() -> dict[str, Any]:
+    """Versions of the data AnnoQ serves (annoq-api-v2 issue #80): genome build,
+    dbSNP release, data version and WGSA version. AnnoQ owns these, since they
+    depend on which index it points to, so SNPWay does not hardcode them.
+    Also the AnnoQ release version, from the AnnoQ site."""
+    try:
+        async with httpx.AsyncClient(
+            verify=False, timeout=ANNOQ_TIMEOUT_SECONDS
+        ) as client:
+            response = await client.get(annoq_version_url())
+            response.raise_for_status()
+            versions = response.json()
+            if not isinstance(versions, dict):
+                raise ValueError("AnnoQ /version is not a JSON object")
+            release = await _get_annoq_release(client)
+        return {**versions, **release}
+    except httpx.HTTPError as e:
+        raise Exception(
+            f"Failed to retrieve AnnoQ version: {_describe_annoq_http_error(e)}"
+        ) from e
+    except ValueError as e:
+        raise Exception(
+            "Failed to retrieve AnnoQ version: unexpected AnnoQ response"
+        ) from e
+
 
 
 async def get_download_url(gql_query: str) -> str:

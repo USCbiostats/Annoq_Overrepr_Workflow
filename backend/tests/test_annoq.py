@@ -1,4 +1,5 @@
 import asyncio
+import dataclasses
 import json
 
 import httpx
@@ -50,6 +51,17 @@ def test_rsid_list_is_split_into_batches(captured_batches):
     assert [len(b["values"]) for b in captured_batches] == [5000, 5000, 2001]
     assert all(b["key"] == "rsIDs" for b in captured_batches)
     assert df["rs_dbSNP151"].tolist() == rsids
+
+
+def test_download_query_requests_the_configured_rsid_field(monkeypatch):
+    monkeypatch.setattr(
+        annoq, "config", dataclasses.replace(annoq.config, annoq_rsid_field="rs_dbSNP")
+    )
+
+    query = annoq.generate_gql_download_query("download_SNPs_by_RsIDs", {"rsIDs": ["rs1"]})
+
+    assert '"rs_dbSNP"' in query
+    assert "rs_dbSNP151" not in query
 
 
 def test_rsid_list_drops_duplicates_and_blanks(captured_batches):
@@ -118,10 +130,14 @@ def _fake_annoq_client(monkeypatch, response_or_error):
             return False
 
         async def _respond(self, method, url):
-            if isinstance(response_or_error, Exception):
-                raise response_or_error
-            response_or_error.request = httpx.Request(method, url)
-            return response_or_error
+            outcome = response_or_error
+            if isinstance(outcome, dict):
+                # One outcome per URL, keyed by the URL's ending.
+                outcome = next(v for k, v in outcome.items() if url.endswith(k))
+            if isinstance(outcome, Exception):
+                raise outcome
+            outcome.request = httpx.Request(method, url)
+            return outcome
 
         async def post(self, url, **kwargs):
             return await self._respond("POST", url)
@@ -147,6 +163,86 @@ def test_get_download_url_reports_timeout(monkeypatch):
 
     with pytest.raises(Exception, match="AnnoQ did not respond within 300 seconds"):
         asyncio.run(annoq.get_download_url("query {}"))
+
+
+def test_annoq_version_url_sits_beside_graphql(monkeypatch):
+    monkeypatch.setattr(
+        annoq,
+        "config",
+        dataclasses.replace(annoq.config, annotation_api_v2="https://api-v2.annoq.org/graphql/"),
+    )
+    assert annoq.annoq_version_url() == "https://api-v2.annoq.org/version"
+
+
+ANNOQ_VERSION = {
+    "api_version": "2.5",
+    "data_version": "HRC.r1-1",
+    "genome_build": "GRCh37/hg19",
+    "dbsnp_release": "151",
+    "wgsa_version": "0.8",
+}
+
+
+def test_annoq_site_version_url_is_the_sites_version_json():
+    # conftest sets ANNOQ_SITE_URL=http://annoq-site.test
+    assert annoq.annoq_site_version_url() == "http://annoq-site.test/version.json"
+
+
+def test_annoq_version_endpoint_adds_the_annoq_release(client, monkeypatch):
+    _fake_annoq_client(
+        monkeypatch,
+        {
+            "/version.json": httpx.Response(
+                200, json={"version": "1.3.11", "releaseDate": "2026-11-03"}
+            ),
+            "/version": httpx.Response(200, json=ANNOQ_VERSION),
+        },
+    )
+
+    response = client.get("/annoq/version")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        **ANNOQ_VERSION,
+        "annoq_version": "1.3.11",
+        "annoq_release_date": "2026-11-03",
+        "annoq_site_url": "http://annoq-site.test",
+    }
+
+
+def test_annoq_version_endpoint_without_site_release_keeps_data_versions(
+    client, monkeypatch
+):
+    # A site that does not publish /version.json (topmed.annoq.org, for now).
+    _fake_annoq_client(
+        monkeypatch,
+        {
+            "/version.json": httpx.Response(404),
+            "/version": httpx.Response(200, json=ANNOQ_VERSION),
+        },
+    )
+
+    response = client.get("/annoq/version")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        **ANNOQ_VERSION,
+        "annoq_version": None,
+        "annoq_release_date": None,
+        "annoq_site_url": "http://annoq-site.test",
+    }
+
+
+def test_annoq_version_endpoint_reports_annoq_failure(client, monkeypatch):
+    # An AnnoQ without /version (before annoq-api-v2 issue #80 is deployed).
+    _fake_annoq_client(monkeypatch, httpx.Response(404))
+
+    response = client.get("/annoq/version")
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == (
+        "Failed to retrieve AnnoQ version: AnnoQ returned HTTP 404 Not Found"
+    )
 
 
 def test_get_download_url_reports_unexpected_body(monkeypatch):

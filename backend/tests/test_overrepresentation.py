@@ -6,7 +6,9 @@ import pandas as pd
 import pytest
 
 from src import workflow
+from src.config import config
 from src.gene_cols import GeneColumn, GeneMappingField
+
 from src.query import IdsQuery, RsIdListQuery
 
 
@@ -98,8 +100,9 @@ def test_panther_search_error_raises_panther_input_error(monkeypatch):
 def _annoq_df(rows: list[dict[str, str]]) -> pd.DataFrame:
     full_rows = []
     for row in rows:
-        full_row = {"chr": "1", "pos": "100", "rs_dbSNP151": ""}
+        full_row = {"chr": "1", "pos": "100", config.annoq_rsid_field: ""}
         full_row.update({column.value: "" for column in GeneColumn})
+
         full_row.update(row)
         full_rows.append(full_row)
     return pd.DataFrame(full_rows)
@@ -118,7 +121,7 @@ def fake_services(main_module, monkeypatch):
             return _annoq_df(
                 [
                     {
-                        "rs_dbSNP151": "rsREF",
+                        config.annoq_rsid_field: "rsREF",
                         "ANNOVAR_refseq_Gene_ID": "REF1",
                         "enhancer_linked_genes": "REF2",
                     }

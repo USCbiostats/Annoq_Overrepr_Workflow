@@ -1,14 +1,18 @@
+import dataclasses
+
 import pandas as pd
 import pytest
 from pydantic import ValidationError
 
+from src import annoq
 from src.annoq import get_rsid_gene_mapping, get_rsid_gene_mapping_with_sources
 from src.gene_cols import ALL_GENE_MAPPING_FIELDS, GeneColumn, GeneMappingField
+
 from src.models import ReferenceListInput, WorkflowInputRequest
 
 
 def _annoq_row(**overrides: str) -> dict[str, str]:
-    row = {"chr": "1", "pos": "100", "rs_dbSNP151": "rs1"}
+    row = {"chr": "1", "pos": "100", annoq.config.annoq_rsid_field: "rs1"}
     row.update({column.value: "" for column in GeneColumn})
     row.update(overrides)
     return row
@@ -66,6 +70,20 @@ def test_variant_without_genes_from_selected_fields_is_dropped(annoq_df):
     )
 
     assert mapping == {}
+
+
+def test_rsid_keys_come_from_the_configured_field(monkeypatch):
+    # TOPMed names its rsID field rs_dbSNP; HRC's rs_dbSNP151 is not there.
+    monkeypatch.setattr(
+        annoq, "config", dataclasses.replace(annoq.config, annoq_rsid_field="rs_dbSNP")
+    )
+    row = {"chr": "1", "pos": "100", "rs_dbSNP": "rs7"}
+    row.update({column.value: "" for column in GeneColumn})
+    row["enhancer_linked_genes"] = "GENED"
+
+    mapping = get_rsid_gene_mapping(pd.DataFrame([row]))
+
+    assert mapping == {"rs7": ["GENED"]}
 
 
 def test_chr_pos_keys(annoq_df):
