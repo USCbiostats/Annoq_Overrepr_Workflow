@@ -225,5 +225,4 @@ count the leading `#` lines and pass that count as `skiprows` (pandas) or
 - AnnoQR's chromosome-range mode (`chromosome_identifier`, `start_position`,
   `end_position`) sends `input_type: "chromosome"`. The backend's `InputType`
   has no such value, so these requests fail validation.
-- `snpway_version` is a placeholder (1.1.0) until the release number is set.
 - `frontend/package.json` still has the scaffold version `0.0.0`.
