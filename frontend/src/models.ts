@@ -83,7 +83,7 @@ export type WorkflowGeneMappingsResponse = GeneMappingDownloadData;
 
 export type RunVersions = {
     snpway_version?: string;
-    genome_build?: string;
+    genome_build: string | null; // null: AnnoQ's /version could not be read
     annoq_panel: string | null; // null: AnnoQ's metadata could not be read at backend startup
     dbsnp_release: string | null;
     // Only the annotation tools (ANNOVAR, SnpEff, VEP) and PEREGRINE enhancer links

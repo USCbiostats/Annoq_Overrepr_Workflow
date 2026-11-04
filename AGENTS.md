@@ -55,9 +55,10 @@ Overrepresentation requests add `annotDataSet` (required), `correction`
 - `run_versions`: `snpway_version`, `genome_build`, `annoq_panel`,
   `dbsnp_release`, `annotator_versions` (only the tools behind the run's
   sources, including a SNP reference list's; keys `ANNOVAR`, `SnpEff`, `VEP`,
-  `PEREGRINE`), `panther_version`, `panther_tool_release`. The AnnoQ values come
-  from one request to AnnoQ's `/annotations` metadata at backend startup and are
-  `null` if it failed. The `panther_*` values are `null` when no test ran.
+  `PEREGRINE`), `panther_version`, `panther_tool_release`. `genome_build`,
+  `annoq_panel` and `dbsnp_release` come from AnnoQ's `/version`, and the tool
+  versions from AnnoQ's `/annotations` metadata. Both are read at backend
+  startup, retried on the next run if they failed, and `null` while unknown. The `panther_*` values are `null` when no test ran.
 
 **Stream events** (one JSON object per line; see the handler's docstring):
 `stage` (`input`, `reference`, `overrepresentation`, `gene_details`), `result`
@@ -71,10 +72,12 @@ failures return 500; when an AnnoQ batch failed, `detail` names it.
 
 ## Input rules
 
-- **Build:** GRCh37/hg19 only (`ANNOQ_GENOME_BUILD`, `backend/src/annoq.py`).
-  There is no liftover.
+- **Build:** the build of the AnnoQ data SNPWay queries, as reported by AnnoQ's
+  `/version` (`GET /annoq/version`); GRCh37/hg19 for HRC (annoq.org). There is
+  no liftover.
 - **rsIDs:** separated by commas, spaces or newlines, and deduplicated in input
-  order. They are matched to AnnoQ's `rs_dbSNP151` field (dbSNP build 151).
+  order. They are matched to AnnoQ's rsID field, set by `ANNOQ_RSID_FIELD` in
+  `backend/.env` (`rs_dbSNP151`, dbSNP build 151, for HRC).
 - **VCF:**
   - Only CHROM and POS, the first two columns, are read, positionally.
   - `#` lines are skipped and a leading `chr` is stripped. Rows without a
@@ -83,7 +86,7 @@ failures return 500; when an AnnoQ batch failed, `detail` names it.
     single-base substitutions (`_expand_ids_for_annoq`), so any SNV that AnnoQ
     holds at that position matches. `ids` that carry an allele (`1:100A>C`) are
     sent as they are.
-- **Panel scope:** AnnoQ's panel, release `HRC.r1-1` (from AnnoQ's metadata),
+- **Panel scope:** AnnoQ's panel, release `HRC.r1-1` (from AnnoQ's `/version`),
   covers chromosomes 1-22 and X. AnnoQ's API accepts only `'1'`-`'22'` and `'X'`
   and answers chromosome Y with HTTP 422 (observed on its `/count/chr` endpoint).
   The bundled reference sample (`frontend/public/samples/reference_sample_100K.vcf`),
@@ -214,8 +217,8 @@ count the leading `#` lines and pass that count as `skiprows` (pandas) or
   analysis at a time with no parallel requests to the public services, and be
   patient; the stream endpoint reports per-batch progress. A failed AnnoQ batch
   stops the run, and the error names that batch.
-- **AnnoQ metadata** (the version stamp) is read once per backend process.
-  Restart the backend to refresh it. Annotation data is queried live on every run.
+- **AnnoQ versions** (the version stamp) are read at backend startup and retried
+  on the next run if that failed. Restart the backend to refresh them. Annotation data is queried live on every run.
 
 ## Known gaps
 

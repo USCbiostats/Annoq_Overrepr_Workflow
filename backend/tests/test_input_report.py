@@ -3,6 +3,7 @@ import json
 import pandas as pd
 import pytest
 
+from src import annoq
 from src.annoq import get_rsid_gene_mapping
 from src.gene_cols import GeneColumn, GeneMappingField
 from src.input_report import (
@@ -262,13 +263,21 @@ def test_endpoint_returns_input_report(client, fake_report_services):
     }
 
 
-def test_endpoint_returns_run_versions(client, fake_report_services):
+def test_endpoint_returns_run_versions(client, fake_report_services, monkeypatch):
+    # AnnoQ's /version as read at startup; its /annotations metadata was not read.
+    monkeypatch.setattr(
+        annoq,
+        "annoq_data_versions",
+        {"genome_build": "GRCh37/hg19", "dbsnp_release": "151", "data_version": "HRC.r1-1"},
+    )
+    monkeypatch.setattr(annoq, "annotator_versions", {})
+
     body = client.post("/workflow/overrepresentation", json=REPORT_REQUEST).json()
 
     assert body["run_versions"] == {
         "snpway_version": "1.1.0",
         "genome_build": "GRCh37/hg19",
-        "annoq_panel": None,
+        "annoq_panel": "HRC.r1-1",
         "dbsnp_release": "151",
         # Default sources (all); AnnoQ metadata not read in this test.
         "annotator_versions": {

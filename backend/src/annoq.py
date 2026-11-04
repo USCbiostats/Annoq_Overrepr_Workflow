@@ -35,16 +35,14 @@ ANNOQ_IDS_BATCH_SIZE = 50000
 ANNOQ_RSIDS_BATCH_SIZE = 5000
 # How long SNPWay waits for each AnnoQ request (download URL and file download).
 ANNOQ_TIMEOUT_SECONDS = 300.0
-# dbSNP build of the rsIDs: the backend reads AnnoQ's rs_dbSNP151 field.
-ANNOQ_DBSNP_RELEASE = "151"
-# Genome build of AnnoQ's chr and pos fields (the metadata has no field for it).
-ANNOQ_GENOME_BUILD = "GRCh37/hg19"
 # How long the startup request for AnnoQ's annotation metadata may take.
 ANNOQ_METADATA_TIMEOUT_SECONDS = 30.0
-# Read from AnnoQ's /annotations metadata once at startup by load_annoq_metadata;
-# None/empty until then or if that request failed (downloads then say "unknown").
-# AnnoQ variant panel release, e.g. "HRC.r1-1".
-annoq_panel_release: str | None = None
+# Read from AnnoQ at startup by load_annoq_metadata, and again by
+# ensure_annoq_metadata while either is empty; empty until then or if the
+# request failed (downloads then say "unknown").
+# AnnoQ's /version, e.g. {"genome_build": "GRCh37/hg19", "dbsnp_release": "151",
+# "data_version": "HRC.r1-1"}, plus the AnnoQ release from the AnnoQ site.
+annoq_data_versions: dict[str, Any] = {}
 # Annotation tool or resource -> version, e.g. {"SnpEff": "4.3t"}.
 annotator_versions: dict[str, str] = {}
 # Variant key -> gene -> the gene columns that assigned the gene to the variant.
@@ -413,18 +411,6 @@ def annoq_metadata_url() -> str:
     return f"{base}/annotations"
 
 
-def parse_annoq_panel_release(metadata: Any) -> str | None:
-    """The panel release from AnnoQ's /annotations metadata: the version of the
-    variant fields (chr, pos, ref, alt), e.g. "HRC.r1-1"."""
-    try:
-        for field in metadata["results"]:
-            if field.get("api_field") == "chr" and field.get("version"):
-                return str(field["version"])
-    except (KeyError, TypeError, AttributeError):
-        pass
-    return None
-
-
 def parse_annotator_versions(metadata: Any) -> dict[str, str]:
     """Versions from AnnoQ's /annotations metadata: each annotation tool's
     top-level entry (e.g. {"SnpEff": "4.3t"}), and for the PEREGRINE enhancer
@@ -448,23 +434,33 @@ def parse_annotator_versions(metadata: Any) -> dict[str, str]:
 
 
 async def load_annoq_metadata() -> None:
-    """Fetch AnnoQ's /annotations metadata once and keep the panel release and
-    annotation tool versions for the life of the process. Any failure leaves them
-    unset (downloads say "unknown")."""
-    global annoq_panel_release, annotator_versions
+    """Fetch the versions of the AnnoQ data and keep them for the life of the
+    process: genome build, dbSNP release and panel release from AnnoQ's /version
+    (get_annoq_version), and annotation tool versions from its /annotations
+    metadata. A failure leaves that part empty (downloads say "unknown")."""
+    global annoq_data_versions, annotator_versions
+    try:
+        annoq_data_versions = await get_annoq_version()
+    except Exception as e:
+        print(f"AnnoQ version unavailable, data versions unknown: {e}")
+        annoq_data_versions = {}
     try:
         async with httpx.AsyncClient(
             verify=False, timeout=ANNOQ_METADATA_TIMEOUT_SECONDS
         ) as client:
             response = await client.get(annoq_metadata_url())
             response.raise_for_status()
-        metadata = response.json()
-        annoq_panel_release = parse_annoq_panel_release(metadata)
-        annotator_versions = parse_annotator_versions(metadata)
+        annotator_versions = parse_annotator_versions(response.json())
     except (httpx.HTTPError, ValueError) as e:
-        print(f"AnnoQ metadata unavailable, versions unknown: {e}")
-        annoq_panel_release = None
+        print(f"AnnoQ metadata unavailable, annotation tool versions unknown: {e}")
         annotator_versions = {}
+
+
+async def ensure_annoq_metadata() -> None:
+    """Retry load_annoq_metadata while part of it is missing, e.g. when AnnoQ
+    could not be reached at startup."""
+    if not annoq_data_versions or not annotator_versions:
+        await load_annoq_metadata()
 
 
 def annoq_version_url() -> str:

@@ -480,6 +480,7 @@ function Home() {
                 setError(null);
                 setIsLoading(false);
               }}
+              genomeBuild={genomeBuild}
             />
           </Box>
         ) : (

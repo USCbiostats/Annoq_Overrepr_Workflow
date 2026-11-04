@@ -99,12 +99,16 @@ export type TestInputsProps = {
   ) => void;
   onReset: () => void;
   isLoading: boolean;
+  // Genome build of the AnnoQ data, from AnnoQ's /version; left out of the
+  // input note while unknown.
+  genomeBuild?: string | null;
 };
 
 const TestInputs: React.FC<TestInputsProps> = ({
   onRunTest,
   isLoading,
   onReset,
+  genomeBuild,
 }) => {
   const [inputType, setInputType] = useState(InputTypes.VCF);
   const [inputText, setInputText] = useState("");
@@ -498,7 +502,7 @@ const TestInputs: React.FC<TestInputsProps> = ({
 
               <Typography variant="body2" color="text.secondary">
                 SNPWay is intended for predefined variant lists (lead SNPs,
-                curated panels, credible sets) on GRCh37/hg19. For GWAS-derived
+                curated panels, credible sets){genomeBuild ? ` on ${genomeBuild}` : ""}. For GWAS-derived
                 inputs, provide LD-pruned or otherwise independent variants;
                 correlated variants can give individual loci disproportionate
                 weight in the enrichment test.

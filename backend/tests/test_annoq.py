@@ -292,10 +292,18 @@ def _overrep_request(fields, reference=None):
     )
 
 
-def test_startup_reads_annoq_panel_release(main_module, monkeypatch):
-    metadata = ANNOQ_METADATA
+def test_startup_reads_annoq_versions(main_module, monkeypatch):
     requested = []
-    _fake_annoq_client(monkeypatch, httpx.Response(200, json=metadata))
+    _fake_annoq_client(
+        monkeypatch,
+        {
+            "/annotations": httpx.Response(200, json=ANNOQ_METADATA),
+            "/version.json": httpx.Response(
+                200, json={"version": "1.3.11", "releaseDate": "2026-11-03"}
+            ),
+            "/version": httpx.Response(200, json=ANNOQ_VERSION),
+        },
+    )
     real_get = httpx.AsyncClient.get
 
     async def recording_get(self, url, **kwargs):
@@ -303,19 +311,25 @@ def test_startup_reads_annoq_panel_release(main_module, monkeypatch):
         return await real_get(self, url, **kwargs)
 
     monkeypatch.setattr(httpx.AsyncClient, "get", recording_get)
-    monkeypatch.setattr(annoq, "annoq_panel_release", None)
+    monkeypatch.setattr(annoq, "annoq_data_versions", {})
     monkeypatch.setattr(annoq, "annotator_versions", {})
 
     with TestClient(main_module.app):  # runs the startup hook
         versions = main_module._run_versions(_overrep_request(ALL_FIELDS))
+    assert versions.genome_build == "GRCh37/hg19"
     assert versions.annoq_panel == "HRC.r1-1"
+    assert versions.dbsnp_release == "151"
     assert versions.annotator_versions == {
         "ANNOVAR": "6/7/2020 23:56",
         "SnpEff": "4.3t",
         "VEP": "ensembl-vep-release-107",
         "PEREGRINE": "Initial Release",
     }
-    assert requested == ["http://annoq.test/annotations"]
+    assert requested == [
+        "http://annoq.test/version",
+        "http://annoq-site.test/version.json",
+        "http://annoq.test/annotations",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -333,6 +347,7 @@ def test_startup_reads_annoq_panel_release(main_module, monkeypatch):
 def test_run_versions_list_only_the_tools_used(
     main_module, monkeypatch, fields, reference_fields, expected
 ):
+    monkeypatch.setattr(annoq, "annoq_data_versions", ANNOQ_VERSION)
     monkeypatch.setattr(
         annoq, "annotator_versions", annoq.parse_annotator_versions(ANNOQ_METADATA)
     )
@@ -355,7 +370,7 @@ def test_run_versions_list_only_the_tools_used(
 
 def test_run_versions_unknown_when_metadata_failed(main_module, monkeypatch):
     _fake_annoq_client(monkeypatch, httpx.ConnectError("unreachable"))
-    monkeypatch.setattr(annoq, "annoq_panel_release", "stale")
+    monkeypatch.setattr(annoq, "annoq_data_versions", {"genome_build": "stale"})
     monkeypatch.setattr(annoq, "annotator_versions", {"VEP": "stale"})
 
     asyncio.run(annoq.load_annoq_metadata())
@@ -363,8 +378,28 @@ def test_run_versions_unknown_when_metadata_failed(main_module, monkeypatch):
     versions = main_module._run_versions(
         _overrep_request(["VEP_ensembl_Gene_ID", "enhancer_linked_genes"])
     )
+    assert versions.genome_build is None
     assert versions.annoq_panel is None
+    assert versions.dbsnp_release is None
     assert versions.annotator_versions == {"VEP": None, "PEREGRINE": None}
+
+
+def test_ensure_annoq_metadata_retries_after_a_failed_startup(monkeypatch):
+    monkeypatch.setattr(annoq, "annoq_data_versions", {})
+    monkeypatch.setattr(annoq, "annotator_versions", {})
+    _fake_annoq_client(
+        monkeypatch,
+        {
+            "/annotations": httpx.Response(200, json=ANNOQ_METADATA),
+            "/version.json": httpx.Response(404),
+            "/version": httpx.Response(200, json=ANNOQ_VERSION),
+        },
+    )
+
+    asyncio.run(annoq.ensure_annoq_metadata())
+
+    assert annoq.annoq_data_versions["genome_build"] == "GRCh37/hg19"
+    assert annoq.annotator_versions["SnpEff"] == "4.3t"
 
 
 def test_peregrine_version_prefers_the_field_version():

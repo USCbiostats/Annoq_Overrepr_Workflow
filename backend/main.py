@@ -17,8 +17,6 @@ from starlette.responses import FileResponse
 from src import annoq
 from src.analytics import send_event
 from src.annoq import (
-    ANNOQ_DBSNP_RELEASE,
-    ANNOQ_GENOME_BUILD,
     GeneSources,
     get_annoq_df,
     get_annoq_version,
@@ -223,6 +221,8 @@ async def _map_request_lists(
     list[str], dict[str, list[str]], GeneSources, list[str] | None, VariantAccounting
 ]:
     """Map the input list and, if given, the reference list to genes."""
+    # Versions for the download stamp, in case AnnoQ was down at startup.
+    await annoq.ensure_annoq_metadata()
     reference_list = request.referenceList
     jobs = [
         run_stage(
@@ -300,9 +300,9 @@ def _run_versions(
         fields += reference_list.geneMappingFields
     return RunVersions(
         snpway_version=SNPWAY_VERSION,
-        genome_build=ANNOQ_GENOME_BUILD,
-        annoq_panel=annoq.annoq_panel_release,
-        dbsnp_release=ANNOQ_DBSNP_RELEASE,
+        genome_build=annoq.annoq_data_versions.get("genome_build"),
+        annoq_panel=annoq.annoq_data_versions.get("data_version"),
+        dbsnp_release=annoq.annoq_data_versions.get("dbsnp_release"),
         # Only the annotation tools behind the sources this run used.
         annotator_versions={
             tool: annoq.annotator_versions.get(tool)

@@ -325,17 +325,27 @@ class RunVersions(BaseModel):
     """Data and tool versions behind a run; null when not known."""
 
     snpway_version: str = Field(..., description="SNPWay release that ran the analysis")
-    genome_build: str = Field(
-        ..., description="Genome build of AnnoQ's variant coordinates"
+    genome_build: str | None = Field(
+        ...,
+        description=(
+            "Genome build of AnnoQ's variant coordinates, from AnnoQ's /version; "
+            "null if that request failed"
+        ),
     )
     annoq_panel: str | None = Field(
         ...,
         description=(
-            "AnnoQ variant panel release from AnnoQ's /annotations metadata, "
-            "read once at startup; null if that request failed"
+            "AnnoQ variant panel release (data_version in AnnoQ's /version); "
+            "null if that request failed"
         ),
     )
-    dbsnp_release: str | None = Field(..., description="dbSNP build of the rsIDs")
+    dbsnp_release: str | None = Field(
+        ...,
+        description=(
+            "dbSNP build of the rsIDs, from AnnoQ's /version; "
+            "null if that request failed"
+        ),
+    )
     annotator_versions: dict[str, str | None] = Field(
         ...,
         description=(
