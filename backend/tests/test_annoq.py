@@ -316,6 +316,7 @@ def test_startup_reads_annoq_versions(main_module, monkeypatch):
 
     with TestClient(main_module.app):  # runs the startup hook
         versions = main_module._run_versions(_overrep_request(ALL_FIELDS))
+    assert versions.annoq_version == "1.3.11"
     assert versions.genome_build == "GRCh37/hg19"
     assert versions.annoq_panel == "HRC.r1-1"
     assert versions.dbsnp_release == "151"
@@ -378,6 +379,7 @@ def test_run_versions_unknown_when_metadata_failed(main_module, monkeypatch):
     versions = main_module._run_versions(
         _overrep_request(["VEP_ensembl_Gene_ID", "enhancer_linked_genes"])
     )
+    assert versions.annoq_version is None
     assert versions.genome_build is None
     assert versions.annoq_panel is None
     assert versions.dbsnp_release is None

@@ -61,6 +61,7 @@ describe("runStampLines", () => {
       runStampLines({
         versions: {
           snpway_version: "1.1.0",
+          annoq_version: "1.3.11",
           genome_build: "GRCh37/hg19",
           annoq_panel: null,
           dbsnp_release: "151",
@@ -76,6 +77,7 @@ describe("runStampLines", () => {
       })
     ).toEqual([
       "# snpway_version,1.1.0",
+      "# annoq_version,1.3.11",
       "# genome_build,GRCh37/hg19",
       "# annoq_panel,unknown",
       "# dbsnp_release,151",
@@ -98,6 +100,7 @@ describe("runStampLines annotator versions", () => {
     runStampLines({
       versions: {
         snpway_version: "1.1.0",
+        annoq_version: "1.3.11",
         genome_build: "GRCh37/hg19",
         annoq_panel: "HRC.r1-1",
         dbsnp_release: "151",

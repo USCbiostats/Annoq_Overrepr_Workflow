@@ -52,13 +52,16 @@ Overrepresentation requests add `annotDataSet` (required), `correction`
 - `reference_gene_list` (`null` with PANTHER's default reference) and
   `input_report.gene_identifiers` (`identifier`, `mapped_by_panther`,
   `panther_listed_as`, `panther_match`).
-- `run_versions`: `snpway_version`, `genome_build`, `annoq_panel`,
-  `dbsnp_release`, `annotator_versions` (only the tools behind the run's
-  sources, including a SNP reference list's; keys `ANNOVAR`, `SnpEff`, `VEP`,
-  `PEREGRINE`), `panther_version`, `panther_tool_release`. `genome_build`,
-  `annoq_panel` and `dbsnp_release` come from AnnoQ's `/version`, and the tool
-  versions from AnnoQ's `/annotations` metadata. Both are read at backend
-  startup, retried on the next run if they failed, and `null` while unknown. The `panther_*` values are `null` when no test ran.
+- `run_versions`: `snpway_version`, `annoq_version`, `genome_build`,
+  `annoq_panel`, `dbsnp_release`, `annotator_versions` (only the tools behind
+  the run's sources, including a SNP reference list's; keys `ANNOVAR`,
+  `SnpEff`, `VEP`, `PEREGRINE`), `panther_version`, `panther_tool_release`.
+  `annoq_version` is the AnnoQ release from the AnnoQ site's `/version.json`
+  (`ANNOQ_SITE_URL` in `backend/.env`; `null` where the site does not publish
+  it, as topmed.annoq.org does not yet). `genome_build`, `annoq_panel` and
+  `dbsnp_release` come from AnnoQ's `/version`, and the tool versions from
+  AnnoQ's `/annotations` metadata. All are read at backend startup, retried on
+  the next run if AnnoQ could not be reached, and `null` while unknown. The `panther_*` values are `null` when no test ran.
 
 **Stream events** (one JSON object per line; see the handler's docstring):
 `stage` (`input`, `reference`, `overrepresentation`, `gene_details`), `result`
@@ -150,6 +153,7 @@ Web UI downloads start with `# key,value` lines (`runStampLines`,
 
 ```
 # snpway_version,1.1.0
+# annoq_version,1.3.11
 # genome_build,GRCh37/hg19
 # annoq_panel,HRC.r1-1
 # dbsnp_release,151

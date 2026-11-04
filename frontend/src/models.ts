@@ -83,6 +83,7 @@ export type WorkflowGeneMappingsResponse = GeneMappingDownloadData;
 
 export type RunVersions = {
     snpway_version?: string;
+    annoq_version: string | null; // null: the AnnoQ site's /version.json could not be read
     genome_build: string | null; // null: AnnoQ's /version could not be read
     annoq_panel: string | null; // null: AnnoQ's metadata could not be read at backend startup
     dbsnp_release: string | null;

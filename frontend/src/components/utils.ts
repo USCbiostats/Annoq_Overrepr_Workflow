@@ -140,6 +140,7 @@ export const runStampLines = (stamp: RunStamp): string[] => {
   ).map(([tool, version]) => `# ${tool.toLowerCase()}_version,${known(version)}`);
   return [
     `# snpway_version,${known(stamp.versions?.snpway_version)}`,
+    `# annoq_version,${known(stamp.versions?.annoq_version)}`,
     `# genome_build,${known(stamp.versions?.genome_build)}`,
     `# annoq_panel,${known(stamp.versions?.annoq_panel)}`,
     `# dbsnp_release,${known(stamp.versions?.dbsnp_release)}`,
