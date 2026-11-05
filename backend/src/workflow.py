@@ -7,6 +7,11 @@ import httpx
 from src.models import OverrepresentationResultItem
 
 PANTHER_OVERREP_URL = "https://pantherdb.org/services/oai/pantherdb/enrich/overrep"
+HUMAN_TAXON_ID = "9606"
+
+
+class PantherInputError(Exception):
+    """PANTHER answered but could not process the submitted gene lists."""
 
 
 def _to_float(value: Any, default: float = 0.0) -> float:
@@ -52,6 +57,7 @@ async def get_overrepresentation(
     annot_data_set: str,
     correction: str,
     enrichment_test_type: str,
+    ref_gene_list: list[str] | None = None,
 ) -> dict[str, Any]:
     if not gene_list:
         return {"results": {"result": []}}
@@ -59,13 +65,18 @@ async def get_overrepresentation(
     payload = {
         "geneInputList": ",".join(gene_list),
         "annotDataSet": annot_data_set,
-        "organism": "9606",
+        "organism": HUMAN_TAXON_ID,
         "mappedInfo": "COMP_LIST",
         "correction": correction,
         "enrichmentTestType": enrichment_test_type,
     }
 
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    # Without a reference list PANTHER uses all genes of the organism.
+    if ref_gene_list:
+        payload["refInputList"] = ",".join(ref_gene_list)
+        payload["refOrganism"] = HUMAN_TAXON_ID
+
+    async with httpx.AsyncClient(timeout=180.0) as client:
         try:
             response = await client.post(
                 PANTHER_OVERREP_URL,
@@ -94,7 +105,7 @@ async def get_overrepresentation(
     if isinstance(data, dict):
         search_block = data.get("search")
         if isinstance(search_block, dict) and search_block.get("error"):
-            raise RuntimeError(
+            raise PantherInputError(
                 f"PANTHER overrepresentation error: {search_block['error']}"
             )
 
@@ -147,6 +158,28 @@ def parse_overrepresentation_results(
         )
 
     return normalized_results
+
+
+def parse_panther_input_list(
+    overrepresentation_data: dict[str, Any],
+) -> tuple[list[str], list[str]]:
+    """Input gene IDs PANTHER reports as mapped and as unmapped."""
+    input_list = overrepresentation_data.get("results", {}).get("input_list")
+    if not isinstance(input_list, dict):
+        return [], []
+    return (
+        _normalize_mapped_ids(input_list.get("mapped_ids")),
+        _normalize_mapped_ids(input_list.get("unmapped_ids")),
+    )
+
+
+def parse_panther_versions(
+    overrepresentation_data: dict[str, Any],
+) -> tuple[str | None, str | None]:
+    """PANTHER's (annot_version_release_date, tool_release_date), or None."""
+    results = overrepresentation_data.get("results", {})
+    values = (results.get("annot_version_release_date"), results.get("tool_release_date"))
+    return tuple(None if v in (None, "") else str(v) for v in values)
 
 
 def _get_relevant_columns(annotation_dataset: str | None) -> list[str]:

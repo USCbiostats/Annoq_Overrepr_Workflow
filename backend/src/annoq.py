@@ -6,9 +6,19 @@ import httpx
 import pandas as pd
 
 from src.config import config
-from src.gene_cols import GENE_COLS
+from src.gene_cols import (
+    ALL_GENE_MAPPING_FIELDS,
+    ANNOQ_DOWNLOAD_COLUMN_NAMES,
+    ANNOTATION_TOOLS,
+    ENHANCER_LINKS,
+    FALLBACK_FOR,
+    GENE_COLS,
+    GeneColumn,
+    GeneMappingField,
+    gene_columns_for,
+)
+from src.progress import ProgressCallback, report_progress
 from src.query import (
-    ChromosomeQuery,
     GeneQuery,
     IdsQuery,
     InputType,
@@ -19,6 +29,24 @@ from src.query import (
 
 DNA_BASES = ("A", "C", "G", "T")
 ANNOQ_IDS_BATCH_SIZE = 50000
+# AnnoQ's gateway gives up after 60 seconds and rejects request bodies over
+# about 1 MB. rsID lookups take about 3.5 ms each, so 5,000 per request
+# finishes in roughly 18 seconds.
+ANNOQ_RSIDS_BATCH_SIZE = 5000
+# How long SNPWay waits for each AnnoQ request (download URL and file download).
+ANNOQ_TIMEOUT_SECONDS = 300.0
+# How long the request for AnnoQ's annotation metadata may take.
+ANNOQ_METADATA_TIMEOUT_SECONDS = 30.0
+# Read from AnnoQ by load_annoq_metadata at the start of every overrepresentation
+# run, for that run's version stamp; empty until the first run or if the
+# request failed (downloads then say "unknown").
+# AnnoQ's /version, e.g. {"genome_build": "GRCh37/hg19", "dbsnp_release": "151",
+# "data_version": "HRC.r1-1"}, plus the AnnoQ release from the AnnoQ site.
+annoq_data_versions: dict[str, Any] = {}
+# Annotation tool or resource -> version, e.g. {"SnpEff": "4.3t"}.
+annotator_versions: dict[str, str] = {}
+# Variant key -> gene -> the gene columns that assigned the gene to the variant.
+GeneSources = dict[str, dict[str, list[GeneColumn]]]
 
 
 def _chunk_items(items: list[str], chunk_size: int) -> list[list[str]]:
@@ -27,18 +55,26 @@ def _chunk_items(items: list[str], chunk_size: int) -> list[list[str]]:
     return [items[i : i + chunk_size] for i in range(0, len(items), chunk_size)]
 
 
-async def _get_annoq_df_for_ids_query(query: IdsQuery) -> pd.DataFrame:
-    expanded_ids = _expand_ids_for_annoq(query.ids)
-    if not expanded_ids:
+async def _get_annoq_df_in_batches(
+    function_name: str,
+    filter_key: str,
+    items: list[str],
+    batch_size: int,
+    batch_label: str,
+    on_progress: ProgressCallback | None = None,
+) -> pd.DataFrame:
+    if not items:
+        report_progress(on_progress, 0, 0)
         return pd.DataFrame()
 
-    id_batches = _chunk_items(expanded_ids, ANNOQ_IDS_BATCH_SIZE)
+    batches = _chunk_items(items, batch_size)
     batch_dfs: list[pd.DataFrame] = []
+    report_progress(on_progress, 0, len(batches))
 
-    for batch_index, batch_ids in enumerate(id_batches, start=1):
+    for batch_index, batch_items in enumerate(batches, start=1):
         gql_query = generate_gql_download_query(
-            "download_SNPs_by_IDs",
-            {"ids": batch_ids},
+            function_name,
+            {filter_key: batch_items},
         )
         try:
             download_url = await get_download_url(gql_query)
@@ -46,24 +82,53 @@ async def _get_annoq_df_for_ids_query(query: IdsQuery) -> pd.DataFrame:
             batch_dfs.append(batch_df)
         except Exception as exc:
             raise Exception(
-                "Failed to retrieve AnnoQ data for ids batch "
-                f"{batch_index}/{len(id_batches)} (size={len(batch_ids)}): {exc}"
+                f"Failed to retrieve AnnoQ data for {batch_label} batch "
+                f"{batch_index}/{len(batches)} (size={len(batch_items)}): {exc}"
             ) from exc
+        report_progress(on_progress, batch_index, len(batches))
 
     merged_df = pd.concat(batch_dfs, ignore_index=True)
     merged_df.replace(".", "", inplace=True)
     return merged_df
 
 
-async def get_annoq_df(input_type: InputType, query: Any) -> pd.DataFrame:
+async def get_annoq_df(
+    input_type: InputType,
+    query: Any,
+    on_progress: ProgressCallback | None = None,
+) -> pd.DataFrame:
     if input_type == InputType.ids:
         if not isinstance(query, IdsQuery):
             raise ValueError("Ids query payload is missing or invalid")
-        return await _get_annoq_df_for_ids_query(query)
+        return await _get_annoq_df_in_batches(
+            "download_SNPs_by_IDs",
+            "ids",
+            _expand_ids_for_annoq(query.ids),
+            ANNOQ_IDS_BATCH_SIZE,
+            "ids",
+            on_progress,
+        )
 
+    if input_type == InputType.rsIdList:
+        if not isinstance(query, RsIdListQuery):
+            raise ValueError("rsID list query payload is missing or invalid")
+        unique_rsids = list(
+            dict.fromkeys(rsid.strip() for rsid in query.rsIdList if rsid.strip())
+        )
+        return await _get_annoq_df_in_batches(
+            "download_SNPs_by_RsIDs",
+            "rsIDs",
+            unique_rsids,
+            ANNOQ_RSIDS_BATCH_SIZE,
+            "rsID",
+            on_progress,
+        )
+
+    report_progress(on_progress, 0, 1)
     gql_query = create_gql_query(input_type, query)
     download_url = await get_download_url(gql_query)
     df = await download_data(download_url)
+    report_progress(on_progress, 1, 1)
 
     # Empty cells in the df have the string "."
     # Replace them with the empty string
@@ -137,8 +202,12 @@ def _chr_pos_to_annoq_variant_ids(chr_pos_id: str) -> list[str]:
     # AnnoQ IDs use chromosome without the "chr" prefix.
     annoq_chr = normalized_chr[3:]
 
+    # Every possible substitution at this position (ref == alt is not a variant).
     return [
-        f"{annoq_chr}:{position}{ref}>{alt}" for ref in DNA_BASES for alt in DNA_BASES
+        f"{annoq_chr}:{position}{ref}>{alt}"
+        for ref in DNA_BASES
+        for alt in DNA_BASES
+        if ref != alt
     ]
 
 
@@ -164,29 +233,62 @@ def _expand_ids_for_annoq(raw_ids: list[str]) -> list[str]:
     return expanded
 
 
+def variant_key(row: pd.Series, force_chr_pos_keys: bool = False) -> str:
+    """Key of an AnnoQ record in rsId_genes_map: chr:pos, or the rsID field."""
+    if force_chr_pos_keys:
+        return _row_to_chr_pos(row)
+    return str(row[config.annoq_rsid_field]).strip()
+
+
 def get_rsid_gene_mapping(
     annoq_df: pd.DataFrame,
     force_chr_pos_keys: bool = False,
+    gene_mapping_fields: list[GeneMappingField] | None = None,
 ) -> dict[str, list[str]]:
+    return get_rsid_gene_mapping_with_sources(
+        annoq_df, force_chr_pos_keys, gene_mapping_fields
+    )[0]
+
+
+def get_rsid_gene_mapping_with_sources(
+    annoq_df: pd.DataFrame,
+    force_chr_pos_keys: bool = False,
+    gene_mapping_fields: list[GeneMappingField] | None = None,
+) -> tuple[dict[str, list[str]], GeneSources]:
+    """The variant-to-genes map, and for each variant and gene the selected
+    gene columns that produced the assignment (in GENE_COLS order)."""
+    selected_fields = (
+        ALL_GENE_MAPPING_FIELDS if gene_mapping_fields is None else gene_mapping_fields
+    )
+    selected_columns = gene_columns_for(selected_fields)
     gemap: dict[str, list[str]] = {}
+    sources: dict[str, dict[str, set[GeneColumn]]] = {}
     for _, row in annoq_df.iterrows():
-        key = ""
-        if force_chr_pos_keys:
-            key = _row_to_chr_pos(row)
-        else:
-            # Get the rsID
-            key = str(row["rs_dbSNP151"]).strip()
+        key = variant_key(row, force_chr_pos_keys)
 
         if not key:
             continue
 
         # Get the genes
         genes: list[str] = []
-        for gene_col, gene_extractor in GENE_COLS:
-            single_type_genes = gene_extractor(row[gene_col])
+        row_sources: dict[str, set[GeneColumn]] = {}
+        column_genes: dict[GeneColumn, list[str]] = {}
+        for gene_field in selected_columns:
+            # Closest genes only for variants the genic column leaves without a gene
+            genic_column = FALLBACK_FOR.get(gene_field)
+            if genic_column is not None and column_genes.get(genic_column):
+                continue
+            gene_extractor = GENE_COLS[gene_field]
+            single_type_genes = gene_extractor(row[gene_field.value])
+            column_genes[gene_field] = [g for g in single_type_genes if g.strip()]
 
             # Add the genes to the set
             genes.extend(single_type_genes)
+
+            # Record the column that produced each gene
+            for gene in single_type_genes:
+                if gene.strip():
+                    row_sources.setdefault(gene.strip(), set()).add(gene_field)
 
         # Remove empty strings
         genes = [gene.strip() for gene in genes if len(gene.strip()) > 0]
@@ -200,13 +302,23 @@ def get_rsid_gene_mapping(
             gemap[key] = list(merged)
         else:
             gemap[key] = list(set(genes))
-    return gemap
+
+        key_sources = sources.setdefault(key, {})
+        for gene, fields in row_sources.items():
+            key_sources.setdefault(gene, set()).update(fields)
+
+    ordered_sources = {
+        key: {
+            gene: [field for field in GENE_COLS if field in fields]
+            for gene, fields in key_sources.items()
+        }
+        for key, key_sources in sources.items()
+    }
+    return gemap, ordered_sources
 
 
 def create_gql_query(input_type: InputType, query: Any) -> Any:
-    if input_type == InputType.chromosome:
-        gql_query = create_chromosome_query(query)
-    elif input_type == InputType.gene:
+    if input_type == InputType.gene:
         gql_query = create_gene_query(query)
     elif input_type == InputType.rsId:
         gql_query = create_rs_id_query(query)
@@ -223,7 +335,11 @@ def create_gql_query(input_type: InputType, query: Any) -> Any:
 
 
 def _get_query_fields() -> list[str]:
-    return ["chr", "pos"] + [i[0] for i in (GENE_COLS + [("rs_dbSNP151",)])]
+    return (
+        ["chr", "pos"]
+        + [field.value for field in GENE_COLS]
+        + [config.annoq_rsid_field]
+    )
 
 
 def generate_gql_download_query(
@@ -245,20 +361,6 @@ def generate_gql_download_query(
     }}
     """
     return query_string
-
-
-def create_chromosome_query(query: ChromosomeQuery) -> Any:
-    normalized_chr = str(query.chr).strip()
-    if normalized_chr.lower().startswith("chr"):
-        normalized_chr = normalized_chr[3:]
-
-    filter_fields = {
-        "chr": normalized_chr,
-        "start": query.start,
-        "end": query.end,
-    }
-
-    return generate_gql_download_query("download_SNPs_by_chromosome", filter_fields)
 
 
 def create_gene_query(query: GeneQuery) -> Any:
@@ -291,21 +393,158 @@ def create_keyword_query(query: KeywordQuery) -> Any:
     pass
 
 
+def _describe_annoq_http_error(exc: httpx.HTTPError) -> str:
+    if isinstance(exc, httpx.HTTPStatusError):
+        response = exc.response
+        return f"AnnoQ returned HTTP {response.status_code} {response.reason_phrase}"
+    if isinstance(exc, httpx.TimeoutException):
+        return f"AnnoQ did not respond within {ANNOQ_TIMEOUT_SECONDS:.0f} seconds"
+    return f"Could not reach AnnoQ ({type(exc).__name__}: {exc})"
+
+
+def annoq_metadata_url() -> str:
+    """AnnoQ's annotation metadata endpoint, beside its GraphQL endpoint
+    (https://api-v2.annoq.org/graphql -> https://api-v2.annoq.org/annotations)."""
+    base = config.annotation_api_v2.rstrip("/")
+    if base.endswith("/graphql"):
+        base = base[: -len("/graphql")]
+    return f"{base}/annotations"
+
+
+def parse_annotator_versions(metadata: Any) -> dict[str, str]:
+    """Versions from AnnoQ's /annotations metadata: each annotation tool's
+    top-level entry (e.g. {"SnpEff": "4.3t"}), and for the PEREGRINE enhancer
+    links the enhancer_linked_genes field, else its parent entry, which is where
+    AnnoQ states it (e.g. "Initial Release")."""
+    versions: dict[str, str] = {}
+    try:
+        entries = {str(field.get("id")): field for field in metadata["results"]}
+        for field in metadata["results"]:
+            name = field.get("name")
+            if name in ANNOTATION_TOOLS and not field.get("leaf") and field.get("version"):
+                versions[name] = str(field["version"])
+            if field.get("api_field") == "enhancer_linked_genes":
+                parent = entries.get(str(field.get("parent_id")), {})
+                version = field.get("version") or parent.get("version")
+                if version:
+                    versions[ENHANCER_LINKS] = str(version)
+    except (KeyError, TypeError, AttributeError):
+        pass
+    return versions
+
+
+async def load_annoq_metadata() -> None:
+    """Read the versions of the AnnoQ data from AnnoQ for the run about to
+    start, so its downloads carry the versions AnnoQ serves now: genome build,
+    dbSNP release, panel release and AnnoQ release (get_annoq_version), and
+    annotation tool versions from its /annotations metadata. A failure leaves
+    that part empty (downloads say "unknown") and does not stop the run."""
+    global annoq_data_versions, annotator_versions
+    try:
+        data_versions = await get_annoq_version()
+    except Exception as e:
+        print(f"AnnoQ version unavailable, data versions unknown: {e}")
+        data_versions = {}
+    try:
+        async with httpx.AsyncClient(
+            verify=False, timeout=ANNOQ_METADATA_TIMEOUT_SECONDS
+        ) as client:
+            response = await client.get(annoq_metadata_url())
+            response.raise_for_status()
+        tool_versions = parse_annotator_versions(response.json())
+    except (httpx.HTTPError, ValueError) as e:
+        print(f"AnnoQ metadata unavailable, annotation tool versions unknown: {e}")
+        tool_versions = {}
+    # Replaced together, so a run never stamps a mix of two reads.
+    annoq_data_versions, annotator_versions = data_versions, tool_versions
+
+
+def annoq_version_url() -> str:
+    """AnnoQ's version endpoint, beside its GraphQL endpoint
+    (https://api-v2.annoq.org/graphql -> https://api-v2.annoq.org/version)."""
+    base = config.annotation_api_v2.rstrip("/")
+    if base.endswith("/graphql"):
+        base = base[: -len("/graphql")]
+    return f"{base}/version"
+
+
+def annoq_site_version_url() -> str:
+    """The AnnoQ site's release version, e.g. https://annoq.org/version.json
+    (annoq-site-v2 issue #23)."""
+    return f"{config.annoq_site_url}/version.json"
+
+
+async def _get_annoq_release(client: httpx.AsyncClient) -> dict[str, Any]:
+    """The AnnoQ release (e.g. 1.3.11) from the AnnoQ site, plus the site's URL.
+    The release is optional: a site that does not publish /version.json leaves
+    it null rather than hiding the data versions, which come from the API."""
+    release: dict[str, Any] = {"annoq_version": None, "annoq_release_date": None}
+    try:
+        response = await client.get(annoq_site_version_url())
+        response.raise_for_status()
+        info = response.json()
+        release = {
+            "annoq_version": info.get("version"),
+            "annoq_release_date": info.get("releaseDate"),
+        }
+    except (httpx.HTTPError, ValueError, AttributeError):
+        pass
+    return {**release, "annoq_site_url": config.annoq_site_url}
+
+
+async def get_annoq_version() -> dict[str, Any]:
+    """Versions of the data AnnoQ serves (annoq-api-v2 issue #80): genome build,
+    dbSNP release, data version and WGSA version. AnnoQ owns these, since they
+    depend on which index it points to, so SNPWay does not hardcode them.
+    Also the AnnoQ release version, from the AnnoQ site."""
+    try:
+        async with httpx.AsyncClient(
+            verify=False, timeout=ANNOQ_TIMEOUT_SECONDS
+        ) as client:
+            response = await client.get(annoq_version_url())
+            response.raise_for_status()
+            versions = response.json()
+            if not isinstance(versions, dict):
+                raise ValueError("AnnoQ /version is not a JSON object")
+            release = await _get_annoq_release(client)
+        return {**versions, **release}
+    except httpx.HTTPError as e:
+        raise Exception(
+            f"Failed to retrieve AnnoQ version: {_describe_annoq_http_error(e)}"
+        ) from e
+    except ValueError as e:
+        raise Exception(
+            "Failed to retrieve AnnoQ version: unexpected AnnoQ response"
+        ) from e
+
+
+
 async def get_download_url(gql_query: str) -> str:
     headers = {"Content-Type": "application/json"}
     try:
-        async with httpx.AsyncClient(verify=False, timeout=60.0) as client:
+        async with httpx.AsyncClient(
+            verify=False, timeout=ANNOQ_TIMEOUT_SECONDS
+        ) as client:
             response = await client.post(
                 config.annotation_api_v2,
                 json={"query": gql_query},
                 headers=headers,
             )
             response.raise_for_status()
-            download_url = response.json()["data"]["download"]
-            return f"{config.annotation_download_v2}{download_url}"
     except httpx.HTTPError as e:
         print(f"Error: {e}")
-        raise Exception("Failed to retrieve download URL")
+        raise Exception(
+            f"Failed to retrieve download URL: {_describe_annoq_http_error(e)}"
+        ) from e
+
+    try:
+        download_url = response.json()["data"]["download"]
+    except (ValueError, KeyError, TypeError) as e:
+        raise Exception(
+            "Failed to retrieve download URL: unexpected AnnoQ response "
+            f"{response.text[:200]!r}"
+        ) from e
+    return f"{config.annotation_download_v2}{download_url}"
 
 
 async def download_data(download_url: str) -> pd.DataFrame:
@@ -315,15 +554,25 @@ async def download_data(download_url: str) -> pd.DataFrame:
 
     try:
         # Download file using httpx library
-        async with httpx.AsyncClient(verify=False, timeout=60.0) as client:
+        async with httpx.AsyncClient(
+            verify=False, timeout=ANNOQ_TIMEOUT_SECONDS
+        ) as client:
             response = await client.get(download_url)
             response.raise_for_status()
+    except httpx.HTTPError as e:
+        print(f"Error: {e}")
+        raise Exception(
+            f"Failed to download data: {_describe_annoq_http_error(e)}"
+        ) from e
 
-            # Load the data into a pandas DataFrame
-            # Use the first row as the header
-            # Use tab as the separator
-            buffer = StringIO(response.text)
-            return pd.read_csv(buffer, sep="\t", header=0)
+    try:
+        # Load the data into a pandas DataFrame
+        # Use the first row as the header
+        # Use tab as the separator
+        buffer = StringIO(response.text)
+        df = pd.read_csv(buffer, sep="\t", header=0)
     except Exception as e:
         print(f"Error: {e}")
-        raise Exception("Failed to download data")
+        raise Exception(f"Failed to download data: could not parse AnnoQ file ({e})")
+    # Some AnnoQ download headers are display names, not query field names
+    return df.rename(columns=ANNOQ_DOWNLOAD_COLUMN_NAMES)

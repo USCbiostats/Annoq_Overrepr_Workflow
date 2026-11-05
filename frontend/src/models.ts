@@ -26,9 +26,50 @@ export type OverrepresentationResultItem = {
     mapped_ids: string[];
 }
 
+export type VariantStatus = "annotated" | "no_record" | "no_gene";
+
+export type VariantReportRow = {
+    input: string; // The variant as submitted
+    variant_key: string | null; // rsId_genes_map key of the matching AnnoQ record; null for no_record
+    status: VariantStatus;
+    n_genes: number;
+}
+
+export type GeneIdentifierReportRow = {
+    identifier: string; // Gene identifier sent to PANTHER
+    mapped_by_panther: "yes" | "no" | "not_listed";
+    panther_listed_as: string | null;
+    panther_match: "exact" | "version_suffix_removed" | "not_listed";
+}
+
+export type InputReportSummary = {
+    n_input: number;
+    n_annotated: number;
+    n_no_record: number;
+    n_no_gene: number;
+    n_records_not_matched_to_input: number;
+    n_identifiers_submitted: number;
+    n_identifiers_mapped_reported_by_panther: number | null; // null when no overrepresentation test was run
+    n_identifiers_matched_incl_suffix_rule: number | null; // mapped_by_panther "yes", incl. ".N" suffix matches
+    n_identifiers_not_mapped_by_panther: number | null;
+    n_identifiers_not_listed_by_panther: number | null;
+}
+
+export type InputReport = {
+    summary: InputReportSummary;
+    variants: VariantReportRow[];
+    gene_identifiers: GeneIdentifierReportRow[] | null;
+}
+
+// Variant key -> gene -> the AnnoQ gene columns (GENE_MAPPING_COLUMNS values) that
+// assigned the gene to the variant.
+export type GeneSources = Record<string, Record<string, string[]>>;
+
 export type GeneMappingResponse = {
     gene_list: string[]; // List of all genes
     rsId_genes_map: Record<string, string[]>; // Mapping of variant key (rsID or chr:pos) to genes
+    rsId_gene_sources?: GeneSources; // Gene columns that produced each variant-gene assignment
+    input_report?: InputReport | null; // Status of each submitted variant and gene identifier
 }
 
 export type PantherGeneInfoResponse = {
@@ -40,6 +81,77 @@ export type GeneMappingDownloadData = GeneMappingResponse & PantherGeneInfoRespo
 
 export type WorkflowGeneMappingsResponse = GeneMappingDownloadData;
 
+export type RunVersions = {
+    snpway_version?: string;
+    annoq_version: string | null; // null: the AnnoQ site's /version.json could not be read
+    genome_build: string | null; // null: AnnoQ's /version could not be read
+    annoq_panel: string | null; // null: AnnoQ's /version could not be read for this run
+    dbsnp_release: string | null;
+    // Only the annotation tools (ANNOVAR, SnpEff, VEP) and PEREGRINE enhancer links
+    // behind the run's gene mapping sources; null: AnnoQ's metadata could not be
+    // read for this run
+    annotator_versions?: Record<string, string | null>;
+    panther_version: string | null; // PANTHER annot_version_release_date
+    panther_tool_release: string | null; // PANTHER tool_release_date
+}
+
 export type WorkflowOverrepresentationResponse = GeneMappingDownloadData & {
     overrepresentation_results: OverrepresentationResultItem[];
+    reference_gene_list?: string[] | null; // Genes from the custom reference list; null when PANTHER's default reference was used
+    run_versions?: RunVersions | null; // SNPWay, AnnoQ and PANTHER versions, for stamping downloads
+}
+
+// Progress events from POST /workflow/overrepresentation/stream.
+export type WorkflowStageName =
+    | "input"
+    | "reference"
+    | "overrepresentation"
+    | "gene_details";
+
+export type WorkflowStageStatus = "pending" | "running" | "done" | "failed";
+
+export type WorkflowStageEvent = {
+    event: "stage";
+    stage: WorkflowStageName;
+    status: WorkflowStageStatus;
+    done: number | null; // Batches finished, when the stage reports batches
+    total: number | null;
+}
+
+export type WorkflowErrorEvent = {
+    event: "error";
+    stage: WorkflowStageName | null;
+    status: number; // HTTP status
+    detail: string;
+}
+
+export type WorkflowStreamEvent =
+    | WorkflowStageEvent
+    | { event: "result"; data: WorkflowOverrepresentationResponse }
+    | { event: "gene_details"; data: PantherGeneInfoResponse }
+    | WorkflowErrorEvent
+    | { event: "heartbeat" };
+
+// Versions of the AnnoQ data SNPWay queries, from GET /annoq/version (passed
+// through from annoq-api-v2's /version, issue #80), plus the AnnoQ release
+// from the AnnoQ site's /version.json and that site's URL (ANNOQ_SITE_URL in
+// the backend's .env). Any version may be null when AnnoQ does not report it.
+export type AnnoqVersion = {
+    api_version?: string | null;
+    data_version?: string | null;
+    genome_build?: string | null;
+    dbsnp_release?: string | null;
+    wgsa_version?: string | null;
+    annoq_version?: string | null;
+    annoq_release_date?: string | null;
+    annoq_site_url?: string | null;
+};
+
+// Client-side view of one stage, built from its stage events.
+export type WorkflowStageProgress = {
+    status: WorkflowStageStatus;
+    done: number | null;
+    total: number | null;
+    startedAt: number | null; // ms timestamps
+    finishedAt: number | null;
 }

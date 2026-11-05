@@ -3,52 +3,126 @@ import { useState } from "react";
 import {
   Alert,
   Button,
-  TextField,
   Select,
   MenuItem,
   FormControl,
+  FormHelperText,
   InputLabel,
   FormGroup,
   FormControlLabel,
   Checkbox,
   Collapse,
+  Divider,
   Typography,
   Stack,
   Box,
+  Tooltip,
 } from "@mui/material";
-import { CorrectionType, InputTypes, TestType, Datasets } from "../constants";
-import { process_rsids } from "../utils";
-import { UploadFile } from "@mui/icons-material";
+import {
+  ALL_GENE_MAPPING_FIELDS,
+  CorrectionType,
+  GeneMappingField,
+  InputTypes,
+  TestType,
+  Datasets,
+} from "../constants";
+import { buildSnpListPayload } from "../utils";
 import { SAMPLE_VCF_FILE } from "./SampleVCF";
 import { SAMPLE_RSID_LIST } from "./SampleRSIDList";
+import SnpListInputPanel, { SnpListSample } from "./SnpListInputPanel";
+import GeneMappingToolsSelector from "./GeneMappingToolsSelector";
+import HelpTip, { TipList } from "./HelpTip";
 
 // Use material ui components
+
+type FormSectionProps = {
+  number: number;
+  title: string;
+  description?: string;
+  // Guidance shown in an info tooltip next to the title.
+  tip?: React.ReactNode;
+  children: React.ReactNode;
+};
+
+// A numbered, outlined block that groups related form controls.
+const FormSection: React.FC<FormSectionProps> = ({
+  number,
+  title,
+  description,
+  tip,
+  children,
+}) => (
+  <Box
+    component="section"
+    sx={{ border: "1px solid", borderColor: "divider", borderRadius: 1, p: 2.5 }}
+  >
+    <Stack direction="row" alignItems="center" spacing={0.5}>
+      <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+        {number}. {title}
+      </Typography>
+      {tip && <HelpTip label={`About ${title.toLowerCase()}`}>{tip}</HelpTip>}
+    </Stack>
+    {description && (
+      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+        {description}
+      </Typography>
+    )}
+    <Box sx={{ mt: 2 }}>{children}</Box>
+  </Box>
+);
+
+// 100K-entry reference samples drawn from HRC r1.1, served from public/samples.
+const SAMPLE_REFERENCE_VCF: SnpListSample = {
+  url: `${import.meta.env.BASE_URL}samples/reference_sample_100K.vcf`,
+  fileName: "reference_sample_100K.vcf",
+};
+const SAMPLE_REFERENCE_RSIDS: SnpListSample = {
+  url: `${import.meta.env.BASE_URL}samples/reference_sample_100K_rsids.txt`,
+  fileName: "reference_sample_100K_rsids.txt",
+};
+// One identifier per human gene from a PANTHER gene list export, mixing HGNC
+// IDs, UniProt IDs, gene names and gene symbols.
+const SAMPLE_REFERENCE_GENES: SnpListSample = {
+  url: `${import.meta.env.BASE_URL}samples/reference_sample_genes.txt`,
+  fileName: "reference_sample_genes.txt",
+};
 
 export type TestInputsProps = {
   onRunTest: (
     payload: any,
     dataset: string,
     testType: TestType,
-    correction: CorrectionType
+    correction: CorrectionType,
+    // Original VCF text, kept in the browser for the input variant report;
+    // null for rsID input.
+    inputVcfText: string | null
   ) => void;
   onReset: () => void;
   isLoading: boolean;
+  // Genome build of the AnnoQ data, from AnnoQ's /version; left out of the
+  // input note while unknown.
+  genomeBuild?: string | null;
 };
 
 const TestInputs: React.FC<TestInputsProps> = ({
   onRunTest,
   isLoading,
   onReset,
+  genomeBuild,
 }) => {
   const [inputType, setInputType] = useState(InputTypes.VCF);
+  const [inputText, setInputText] = useState("");
+  const [inputMappingFields, setInputMappingFields] = useState<
+    GeneMappingField[]
+  >(ALL_GENE_MAPPING_FIELDS);
 
-  const [chromosome, setChromosome] = useState("");
-  const [startPosition, setStartPosition] = useState("");
-  const [endPosition, setEndPosition] = useState("");
-
-  const [rsIds, setRsIds] = useState("");
-
-  const [vcfFile, setVcfFile] = useState("");
+  const [useCustomReference, setUseCustomReference] = useState(false);
+  const [refInputType, setRefInputType] = useState(InputTypes.VCF);
+  const [refText, setRefText] = useState("");
+  const [refSameAsInput, setRefSameAsInput] = useState(true);
+  const [refMappingFields, setRefMappingFields] = useState<
+    GeneMappingField[]
+  >(ALL_GENE_MAPPING_FIELDS);
 
   const [advancedOptions, setAdvancedOptions] = useState(false);
   const [testType, setTestType] = useState(TestType.FISHER);
@@ -56,165 +130,99 @@ const TestInputs: React.FC<TestInputsProps> = ({
   const [correction, setCorrection] = useState(CorrectionType.FDR);
   const [inputError, setInputError] = useState<string | null>(null);
 
-  const normalizeChromosome = (rawChromosome: string): string => {
-    const trimmed = rawChromosome.trim();
-    if (!trimmed) return "";
-    const withoutPrefix = trimmed.replace(/^chr/i, "");
-    return withoutPrefix;
-  };
+  const effectiveRefMappingFields = refSameAsInput
+    ? inputMappingFields
+    : refMappingFields;
 
-  const toChrPosId = (rawChromosome: string, pos: string): string => {
-    const chromosome = normalizeChromosome(rawChromosome);
-    return `${chromosome}:${pos}`;
-  };
-
-  const parseVcfToIds = (
-    rawVcf: string
-  ): { ids: string[]; invalidRows: number } => {
-    const ids: string[] = [];
-    let invalidRows = 0;
-
-    for (const line of rawVcf.split("\n")) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) {
-        continue;
-      }
-
-      // Prefer tab parsing so empty fields are preserved.
-      let chrom = "";
-      let pos = "";
-
-      const tabFields = trimmed.split("\t");
-      if (tabFields.length >= 2) {
-        // VCF columns: CHROM POS ...
-        chrom = tabFields[0];
-        pos = tabFields[1];
-      } else {
-        // Fallback for whitespace-separated rows (tabs replaced by spaces, etc.).
-        const wsFields = trimmed.split(/\s+/);
-        if (wsFields.length >= 2) {
-          // CHROM POS ...
-          chrom = wsFields[0];
-          pos = wsFields[1];
-        } else {
-          invalidRows += 1;
-          continue;
-        }
-      }
-
-      const normalizedChrom = normalizeChromosome(chrom);
-      const normalizedPos = pos.trim();
-
-      if (
-        !normalizedChrom ||
-        !normalizedPos ||
-        !/^\d+$/.test(normalizedPos)
-      ) {
-        invalidRows += 1;
-        continue;
-      }
-
-      ids.push(toChrPosId(normalizedChrom, normalizedPos));
-    }
-
-    return { ids, invalidRows };
-  };
+  // Gene lists go to PANTHER as they are, so mapping tools do not apply.
+  const refIsGeneList = refInputType === InputTypes.GENES;
 
   const submitDisabled =
     isLoading ||
-    (inputType === InputTypes.VCF && !vcfFile.trim()) ||
-    (inputType === InputTypes.CHROMOSOME &&
-      (!chromosome.trim() || !startPosition.trim() || !endPosition.trim())) ||
-    (inputType === InputTypes.RSIDS && !rsIds.trim());
+    !inputText.trim() ||
+    inputMappingFields.length === 0 ||
+    (useCustomReference &&
+      (!refText.trim() ||
+        (!refIsGeneList && effectiveRefMappingFields.length === 0)));
+
+  // Explains why Run test is disabled, in the order the form is filled in.
+  const runDisabledReason = !inputText.trim()
+    ? "Provide an input list first."
+    : inputMappingFields.length === 0
+    ? "Select at least one SNP to gene mapping tool for the input list."
+    : useCustomReference && !refText.trim()
+    ? "Provide a custom reference list, or clear \"Use custom reference list\"."
+    : "Select at least one SNP to gene mapping tool for the reference list.";
 
   const query_data = () => {
-    const data: Record<string, any> = {};
+    const input = buildSnpListPayload(
+      inputType,
+      inputText,
+      inputMappingFields
+    );
+    const warnings = [input.warning];
 
-    if (inputType === InputTypes.CHROMOSOME) {
-      data["chr"] = normalizeChromosome(chromosome);
-      data["start"] = startPosition;
-      data["end"] = endPosition;
-
-      return {
-        input_type: inputType,
-        chrQuery: data,
-      };
-    } else if (inputType === InputTypes.VCF) {
-      const { ids, invalidRows } = parseVcfToIds(vcfFile);
-      const uniqueIds = Array.from(new Set(ids));
-
-      if (uniqueIds.length === 0) {
-        throw new Error(
-          "No valid variants were found in the VCF input. Make sure each row includes CHROM and POS."
-        );
-      }
-
-      if (invalidRows > 0) {
-        setInputError(
-          `Skipped ${invalidRows} invalid VCF row(s). Continue with ${uniqueIds.length} valid position(s).`
-        );
-      }
-
-      data["ids"] = uniqueIds;
-
-      return {
-        input_type: "ids",
-        idsQuery: data,
-      };
-    } else {
-      const parsedRsids = process_rsids(rsIds);
-      if (parsedRsids.length === 0) {
-        throw new Error("No valid rsIDs were found in the input.");
-      }
-
-      data["rsIdList"] = parsedRsids;
-
-      return {
-        input_type: inputType,
-        rsIdListQuery: data,
-      };
+    let referenceList = undefined;
+    if (useCustomReference) {
+      const reference = buildSnpListPayload(
+        refInputType,
+        refText,
+        effectiveRefMappingFields,
+        "reference "
+      );
+      warnings.push(reference.warning);
+      referenceList = reference.payload;
     }
+
+    const warningText = warnings.filter(Boolean).join(" ");
+    if (warningText) {
+      setInputError(warningText);
+    }
+
+    return referenceList
+      ? { ...input.payload, referenceList }
+      : input.payload;
   };
 
   const handleRunTest = () => {
     setInputError(null);
     try {
       const data = query_data();
-      onRunTest(data, annotDataSet, testType, correction);
+      onRunTest(
+        data,
+        annotDataSet,
+        testType,
+        correction,
+        inputType === InputTypes.VCF ? inputText : null
+      );
     } catch (error) {
       setInputError((error as Error).message);
     }
   };
 
+  const handleRefSameAsInputChange = (checked: boolean) => {
+    if (!checked) {
+      // Start the reference selection from the input list's current selection.
+      setRefMappingFields(inputMappingFields);
+    }
+    setRefSameAsInput(checked);
+  };
+
   const handleReset = () => {
     setInputType(InputTypes.VCF);
-    setChromosome("");
-    setStartPosition("");
-    setEndPosition("");
-    setRsIds("");
-    setVcfFile("");
+    setInputText("");
+    setInputMappingFields(ALL_GENE_MAPPING_FIELDS);
+    setUseCustomReference(false);
+    setRefInputType(InputTypes.VCF);
+    setRefText("");
+    setRefSameAsInput(true);
+    setRefMappingFields(ALL_GENE_MAPPING_FIELDS);
     setTestType(TestType.FISHER);
     setAnnotDataSet(Datasets[0].value);
     setCorrection(CorrectionType.FDR);
     setAdvancedOptions(false);
     setInputError(null);
     onReset();
-  };
-
-  const readFileEvent = (
-    event: React.ChangeEvent<HTMLInputElement>,
-    callback: (text: string) => void
-  ) => {
-    const reader = new FileReader();
-
-    if (event.target.files && event.target.files.length) {
-      const [file] = event.target.files;
-      reader.readAsText(file);
-
-      reader.onload = () => {
-        callback((reader.result || "").toString());
-      };
-    }
   };
 
   return (
@@ -233,139 +241,45 @@ const TestInputs: React.FC<TestInputsProps> = ({
         <FormGroup>
           <fieldset disabled={isLoading} style={{ border: "none", padding: 0 }}>
             <Stack spacing={3}>
-              <FormControl component="fieldset" disabled={isLoading} fullWidth>
-                <InputLabel id="type-label">Retrieve SNP data by</InputLabel>
-                <Select
-                  labelId="type-label"
-                  label="Retrieve SNP data by"
-                  value={inputType}
-                  onChange={(e) => {
-                    if (e.target.value === InputTypes.RSIDS) {
-                      setRsIds("");
-                    } else if (e.target.value === InputTypes.CHROMOSOME) {
-                      setChromosome("");
-                      setStartPosition("");
-                      setEndPosition("");
-                    } else {
-                      setVcfFile("");
-                    }
-
-                    setInputType(e.target.value as InputTypes);
-                  }}
-                >
-                  <MenuItem value={InputTypes.VCF}>VCF file</MenuItem>
-                  <MenuItem value={InputTypes.CHROMOSOME}>Chromosome</MenuItem>
-                  <MenuItem value={InputTypes.RSIDS}>rsIDs</MenuItem>
-                </Select>
-              </FormControl>
-
-              {inputType === InputTypes.CHROMOSOME ? (
-                <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-                  <TextField
-                    label="Chromosome"
-                    value={chromosome}
-                    onChange={(e) => setChromosome(e.target.value)}
-                    fullWidth
-                  />
-                  <TextField
-                    label="Start position"
-                    value={startPosition}
-                    onChange={(e) => setStartPosition(e.target.value)}
-                    fullWidth
-                  />
-                  <TextField
-                    label="End position"
-                    value={endPosition}
-                    onChange={(e) => setEndPosition(e.target.value)}
-                    fullWidth
-                  />
-                </Stack>
-              ) : inputType === InputTypes.VCF ? (
-                <Stack spacing={1.5}>
-                  <TextField
-                    label="VCF file"
-                    value={vcfFile}
-                    onChange={(e) => setVcfFile(e.target.value)}
-                    multiline
-                    rows={5}
-                    placeholder="Paste VCF content"
-                  />
-                  <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-                    <Button variant="outlined" component="label">
-                      <UploadFile />
-                      Upload VCF file
-                      <input
-                        style={{ display: "none" }}
-                        type="file"
-                        onChange={(event) => {
-                          readFileEvent(event, setVcfFile);
-                        }}
-                      />
-                    </Button>
-                    <Button
-                      variant="outlined"
-                      color="warning"
-                      onClick={() => setVcfFile(SAMPLE_VCF_FILE)}
-                    >
-                      Sample VCF file
-                    </Button>
-                    <Button
-                      variant="outlined"
-                      color="secondary"
-                      onClick={() => setVcfFile("")}
-                    >
-                      Clear
-                    </Button>
-                  </Stack>
-                </Stack>
-              ) : (
-                <Stack spacing={1.5}>
-                  <TextField
-                    label="rsIDs"
-                    value={rsIds}
-                    onChange={(e) => setRsIds(e.target.value)}
-                    multiline
-                    rows={5}
-                    placeholder="Enter rsIDs separated by commas, spaces, or new lines"
-                  />
-                  <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-                    <Button variant="outlined" component="label">
-                      <UploadFile />
-                      Populate from file
-                      <input
-                        style={{ display: "none" }}
-                        type="file"
-                        onChange={(event) => {
-                          readFileEvent(event, setRsIds);
-                        }}
-                      />
-                    </Button>
-                    <Button
-                      variant="outlined"
-                      color="warning"
-                      onClick={() => setRsIds(SAMPLE_RSID_LIST)}
-                    >
-                      Sample rsID list
-                    </Button>
-                    <Button
-                      variant="outlined"
-                      color="secondary"
-                      onClick={() => setRsIds("")}
-                    >
-                      Clear
-                    </Button>
-                  </Stack>
-                </Stack>
-              )}
-
-              <Typography
-                variant="subtitle2"
-                color="text.secondary"
-                sx={{ mt: 0.5 }}
+              <FormSection
+                number={1}
+                title="Input list"
+                tip={
+                  <>
+                    Provide the SNPs to analyze as a VCF file or a list of
+                    rsIDs. Upload a file, paste the content, or load a sample
+                    to try the workflow first.
+                  </>
+                }
               >
-                Select an annotation dataset to analyze.
-              </Typography>
-              <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+                <SnpListInputPanel
+                  idPrefix="input"
+                  selectLabel="Retrieve SNP data by"
+                  inputType={inputType}
+                  onInputTypeChange={setInputType}
+                  text={inputText}
+                  onTextChange={setInputText}
+                  sampleVcf={SAMPLE_VCF_FILE}
+                  sampleRsIds={SAMPLE_RSID_LIST}
+                  disabled={isLoading}
+                />
+              </FormSection>
+
+              <FormSection
+                number={2}
+                title="Annotation data set"
+                description="Select an annotation dataset to analyze."
+                tip={
+                  <>
+                    Choose one dataset for the enrichment analysis. SNPWay
+                    tests its categories for overrepresentation in the genes
+                    mapped from your input list.
+                    <TipList
+                      items={Datasets.map((dataset) => dataset.name)}
+                    />
+                  </>
+                }
+              >
                 <FormControl
                   component={"fieldset"}
                   disabled={isLoading}
@@ -387,75 +301,234 @@ const TestInputs: React.FC<TestInputsProps> = ({
                     ))}
                   </Select>
                 </FormControl>
+              </FormSection>
+
+              <Stack direction="row" alignItems="center">
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={advancedOptions}
+                      onChange={() => setAdvancedOptions(!advancedOptions)}
+                    />
+                  }
+                  label="Show advanced options"
+                  sx={{ mr: 0.5 }}
+                />
+                <HelpTip label="About advanced options">
+                  Optional settings. Leave them closed to use the defaults:
+                  <TipList
+                    items={[
+                      "SNP to gene mapping: all available AnnoQ mapping tools",
+                      "Reference list: all human genes used by PANTHER",
+                      "Statistical test: Fisher's exact test with false discovery rate correction",
+                    ]}
+                  />
+                </HelpTip>
               </Stack>
 
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={advancedOptions}
-                    onChange={() => setAdvancedOptions(!advancedOptions)}
-                  />
-                }
-                label="Show advanced options"
-              />
-
               <Collapse in={advancedOptions}>
-                <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-                  <FormControl
-                    component={"fieldset"}
-                    disabled={isLoading}
-                    fullWidth
+                <Stack spacing={3}>
+                  <FormSection
+                    number={3}
+                    title="SNP to gene mapping annotation tools for input list"
+                    description="Choose which annotation tools are used to map the input SNPs to genes."
+                    tip={
+                      <>
+                        By default, all available AnnoQ mapping tools are used.
+                        <TipList
+                          items={[
+                            "At least one mapping tool must remain selected.",
+                            "For ANNOVAR, SnpEff, and VEP, select at least one gene model (Ensembl and/or RefSeq). Deselecting both removes that tool.",
+                            "PEREGRINE maps SNPs to enhancer-linked genes and has no gene model.",
+                            "Gene mappings from all selected tools are combined before the enrichment analysis.",
+                          ]}
+                        />
+                      </>
+                    }
                   >
-                    <InputLabel id="test-type-label">Test type</InputLabel>
-                    <Select
-                      labelId="test-type-label"
-                      label="Test type"
-                      value={testType}
-                      onChange={(e) => setTestType(e.target.value as TestType)}
-                    >
-                      <MenuItem value={TestType.FISHER}>
-                        Fisher’s exact
-                      </MenuItem>
-                      <MenuItem value={TestType.BINOMIAL}>Binomial</MenuItem>
-                    </Select>
-                  </FormControl>
-                  <FormControl
-                    component={"fieldset"}
-                    disabled={isLoading}
-                    fullWidth
+                    <GeneMappingToolsSelector
+                      title="Selected"
+                      value={inputMappingFields}
+                      onChange={setInputMappingFields}
+                      disabled={isLoading}
+                      collapsible={false}
+                    />
+                  </FormSection>
+
+                  <FormSection
+                    number={4}
+                    title="Reference list"
+                    description="By default PANTHER uses all human genes as the reference list. Provide the background SNPs (for example, all genotyped SNPs) to use their genes instead."
+                    tip={
+                      <>
+                        A custom reference is appropriate when the variants that
+                        could have been observed are restricted, such as the
+                        SNPs on a genotyping array. Select &quot;Use custom
+                        reference list&quot;, then provide either:
+                        <TipList
+                          items={[
+                            "A background SNP list as a VCF file or rsID list",
+                            "A background gene list, preferably using UniProt identifiers",
+                          ]}
+                        />
+                      </>
+                    }
                   >
-                    <InputLabel id="correction-label">Correction</InputLabel>
-                    <Select
-                      labelId="correction-label"
-                      label="Correction"
-                      value={correction}
-                      onChange={(e) =>
-                        setCorrection(e.target.value as CorrectionType)
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={useCustomReference}
+                          onChange={(e) =>
+                            setUseCustomReference(e.target.checked)
+                          }
+                        />
                       }
-                    >
-                      <MenuItem value={CorrectionType.FDR}>
-                        Calculate false discovery rate
-                      </MenuItem>
-                      <MenuItem value={CorrectionType.BONFERRONI}>
-                        Use the Bonferroni correction for multiple testing
-                      </MenuItem>
-                      <MenuItem value={CorrectionType.NONE}>
-                        No correction
-                      </MenuItem>
-                    </Select>
-                  </FormControl>
+                      label="Use custom reference list"
+                    />
+
+                    <Collapse in={useCustomReference} unmountOnExit>
+                      <Stack spacing={3} sx={{ mt: 2 }}>
+                        <SnpListInputPanel
+                          idPrefix="reference"
+                          selectLabel="Reference list type"
+                          inputType={refInputType}
+                          onInputTypeChange={setRefInputType}
+                          text={refText}
+                          onTextChange={setRefText}
+                          sampleVcf={SAMPLE_REFERENCE_VCF}
+                          sampleRsIds={SAMPLE_REFERENCE_RSIDS}
+                          sampleGenes={SAMPLE_REFERENCE_GENES}
+                          allowGeneList
+                          disabled={isLoading}
+                        />
+                        <Divider />
+                        {refIsGeneList ? (
+                          <Typography variant="body2" color="text.secondary">
+                            Gene lists are sent to PANTHER as the reference
+                            list as they are, so SNP to gene mapping tools do
+                            not apply. Use gene IDs PANTHER recognizes, such as
+                            gene symbols or Ensembl IDs.
+                          </Typography>
+                        ) : (
+                          <GeneMappingToolsSelector
+                            title="SNP to gene mapping annotation tools for reference list"
+                            value={effectiveRefMappingFields}
+                            onChange={setRefMappingFields}
+                            disabled={isLoading}
+                            collapsible={false}
+                            sameAsInput={{
+                              checked: refSameAsInput,
+                              onChange: handleRefSameAsInputChange,
+                            }}
+                          />
+                        )}
+                      </Stack>
+                    </Collapse>
+                  </FormSection>
+
+                  <FormSection
+                    number={5}
+                    title="Statistical test"
+                    tip={
+                      <>
+                        The default is Fisher&apos;s exact test with false
+                        discovery rate correction.
+                        <TipList
+                          items={[
+                            "Test type: Fisher's exact or binomial",
+                            "Correction for multiple testing: false discovery rate, Bonferroni, or none",
+                          ]}
+                        />
+                      </>
+                    }
+                  >
+                    <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+                      <FormControl
+                        component={"fieldset"}
+                        disabled={isLoading}
+                        fullWidth
+                      >
+                        <InputLabel id="test-type-label">Test type</InputLabel>
+                        <Select
+                          labelId="test-type-label"
+                          label="Test type"
+                          value={testType}
+                          onChange={(e) =>
+                            setTestType(e.target.value as TestType)
+                          }
+                        >
+                          <MenuItem value={TestType.FISHER}>
+                            Fisher’s exact
+                          </MenuItem>
+                          <MenuItem value={TestType.BINOMIAL}>Binomial</MenuItem>
+                        </Select>
+                      </FormControl>
+                      <FormControl
+                        component={"fieldset"}
+                        disabled={isLoading}
+                        fullWidth
+                      >
+                        <InputLabel id="correction-label">Correction</InputLabel>
+                        <Select
+                          labelId="correction-label"
+                          label="Correction"
+                          value={correction}
+                          onChange={(e) =>
+                            setCorrection(e.target.value as CorrectionType)
+                          }
+                        >
+                          <MenuItem value={CorrectionType.FDR}>
+                            Calculate false discovery rate
+                          </MenuItem>
+                          <MenuItem value={CorrectionType.BONFERRONI}>
+                            Use the Bonferroni correction for multiple testing
+                          </MenuItem>
+                          <MenuItem value={CorrectionType.NONE}>
+                            No correction
+                          </MenuItem>
+                        </Select>
+                        {correction === CorrectionType.NONE && (
+                          <FormHelperText>
+                            P-values will not be corrected for multiple
+                            testing. The results page and downloads will say
+                            so.
+                          </FormHelperText>
+                        )}
+                      </FormControl>
+                    </Stack>
+                  </FormSection>
                 </Stack>
               </Collapse>
 
+              <Typography variant="body2" color="text.secondary">
+                SNPWay is intended for predefined variant lists (lead SNPs,
+                curated panels, credible sets){genomeBuild ? ` on ${genomeBuild}` : ""}. For GWAS-derived
+                inputs, provide LD-pruned or otherwise independent variants;
+                correlated variants can give individual loci disproportionate
+                weight in the enrichment test.
+              </Typography>
+
               <Stack alignItems={"start"} direction="row" spacing={2}>
-                <Button
-                  variant="contained"
-                  color="primary"
-                  onClick={handleRunTest}
-                  disabled={submitDisabled}
+                <Tooltip
+                  arrow
+                  title={
+                    submitDisabled && !isLoading
+                      ? runDisabledReason
+                      : "Start the enrichment analysis. Processing time depends on the size of the input and the selected options."
+                  }
                 >
-                  Run test
-                </Button>
+                  {/* A span so the tooltip still works while the button is disabled. */}
+                  <span>
+                    <Button
+                      variant="contained"
+                      color="primary"
+                      onClick={handleRunTest}
+                      disabled={submitDisabled}
+                    >
+                      Run test
+                    </Button>
+                  </span>
+                </Tooltip>
                 <Button
                   variant="text"
                   color="secondary"

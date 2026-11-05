@@ -3,18 +3,13 @@ from pydantic import BaseModel
 
 
 class InputType(Enum):
-    chromosome = "chromosome"
     gene = "gene"
     rsId = "rsId"
     rsIdList = "rsIdList"
     ids = "ids"
     keyword = "keyword"
-
-
-class ChromosomeQuery(BaseModel):
-    chr: str
-    start: int
-    end: int
+    # Gene IDs sent to PANTHER as they are; only allowed for reference lists.
+    geneList = "geneList"
 
 
 class RsIdQuery(BaseModel):
@@ -35,3 +30,7 @@ class GeneQuery(BaseModel):
 
 class KeywordQuery(BaseModel):
     keyword: str
+
+
+class GeneListQuery(BaseModel):
+    genes: list[str]

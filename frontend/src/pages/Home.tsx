@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import TestInputs from "../components/TestInputs";
 import TopBar from "../components/TopBar";
 import BrandHeader from "../components/BrandHeader";
+import ProgressPanel from "../components/ProgressPanel";
 import Alert from "@mui/material/Alert";
-import CircularProgress from "@mui/material/CircularProgress";
 import {
   Typography,
   Container,
@@ -16,14 +16,34 @@ import {
   Stack,
   Button,
 } from "@mui/material";
-import { CorrectionType, InputTypes, TestType } from "../constants";
 import {
-  runWorkflowOverrepresentation,
+  ALL_GENE_MAPPING_FIELDS,
+  CorrectionType,
+  GeneMappingField,
+  InputTypes,
+  TestType,
+} from "../constants";
+import {
+  streamWorkflowOverrepresentation,
+  fetchAnnoqVersion,
   MAX_OVERREP_GENE_COUNT,
 } from "../apis";
 import Footer from "../components/Footer";
-import { WorkflowOverrepresentationResponse } from "../models";
+import {
+  AnnoqVersion,
+  InputReport,
+  WorkflowOverrepresentationResponse,
+  WorkflowStreamEvent,
+} from "../models";
+import {
+  createInputVariantReportCsv,
+  formatRunDate,
+  runStampLines,
+  saveCsvFile,
+  withRunDate,
+} from "../components/utils";
 import ResultDisplay from "../components/ResultDisplay";
+import { WorkflowStages, applyStageEvent } from "../workflowProgress";
 
 function Home() {
   const [isLoading, setIsLoading] = useState(false);
@@ -40,42 +60,113 @@ function Home() {
   });
   const [resultInputType, setResultInputType] =
     useState<InputTypes | null>(null);
+  // Original VCF text of the shown results, for the input variant report.
+  const [resultVcfText, setResultVcfText] = useState<string | null>(null);
+  // Input variant report of a run that found no genes, offered with the error.
+  const [noGenesReport, setNoGenesReport] = useState<{
+    report: InputReport;
+    vcfText: string | null;
+    stampLines: string[];
+    runDate: string;
+  } | null>(null);
+  // Date of the shown results, stamped into downloads.
+  const [resultRunDate, setResultRunDate] = useState("");
+  const [resultMappingFields, setResultMappingFields] = useState({
+    input: ALL_GENE_MAPPING_FIELDS,
+    reference: null as GeneMappingField[] | null,
+  });
+  // Progress of the current run, from the streaming endpoint.
+  const [stageProgress, setStageProgress] = useState<WorkflowStages>({});
+  const [runStartedAt, setRunStartedAt] = useState(() => Date.now());
+  // Set when gene details (download data) fail after results are shown.
+  const [geneDetailsError, setGeneDetailsError] = useState<string | null>(null);
+  const [downloadsReady, setDownloadsReady] = useState(false);
+  const [referenceIsGeneList, setReferenceIsGeneList] = useState(false);
+  const runAbortRef = useRef<AbortController | null>(null);
+
+  // Stop any running analysis when the page is left or restarted from the
+  // Home link or logo.
+  useEffect(() => () => runAbortRef.current?.abort(), []);
+
+  // The genome build and AnnoQ release come from AnnoQ, which knows which
+  // index it serves; the backend's .env picks the AnnoQ site. Each is left out
+  // of the page when AnnoQ does not report it.
+  const [annoqVersion, setAnnoqVersion] = useState<AnnoqVersion | null>(null);
+  useEffect(() => {
+    let active = true;
+    fetchAnnoqVersion()
+      .then((version) => {
+        if (active) setAnnoqVersion(version);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
+  const genomeBuild = annoqVersion?.genome_build;
+  const annoqRelease = annoqVersion?.annoq_version;
+  // annoq.org until the backend answers: the AnnoQ project's home either way.
+  const annoqSiteUrl = annoqVersion?.annoq_site_url ?? "https://annoq.org";
 
   const onRunTest = async (
     payload: any,
     dataset: string,
     testType: TestType,
-    correction: CorrectionType
+    correction: CorrectionType,
+    inputVcfText: string | null
   ) => {
+    runAbortRef.current?.abort();
+    const controller = new AbortController();
+    runAbortRef.current = controller;
+
     setIsLoading(true);
     setError(null);
+    setNoGenesReport(null);
     setSuccess(false);
+    setGeneDetailsError(null);
+    setDownloadsReady(false);
+    setStageProgress({});
+    setRunStartedAt(Date.now());
+    setReferenceIsGeneList(
+      payload?.referenceList?.input_type === InputTypes.GENES
+    );
 
-    try {
-      const response = await runWorkflowOverrepresentation(
-        payload,
-        dataset,
-        correction,
-        testType
-      );
+    let gotResult = false;
+    let gotGeneDetails = false;
+    let gotError = false;
+
+    // Returns false when the results cannot be shown.
+    const showResults = (response: WorkflowOverrepresentationResponse) => {
       setWorkflowResponse(response);
 
-      if (!response) {
-        setError("No data returned from the server. Please try again.");
-        return;
-      }
+      const runDate = formatRunDate(new Date());
       if (response.gene_list.length === 0) {
         setError("No genes found. Please check your input.");
-        return;
+        if (response.input_report) {
+          setNoGenesReport({
+            report: response.input_report,
+            vcfText: inputVcfText,
+            stampLines: runStampLines({
+              versions: response.run_versions,
+              geneMappingFields: payload?.geneMappingFields ?? ALL_GENE_MAPPING_FIELDS,
+              testType,
+              correction,
+              runDate,
+              annotationDataset: dataset,
+            }),
+            runDate,
+          });
+        }
+        return false;
       }
 
       if (response.gene_list.length > MAX_OVERREP_GENE_COUNT) {
         setError(
           "We support a maximum of 100,000 unique genes for PANTHER overrepresentation. " +
             `Your input produced ${response.gene_list.length.toLocaleString()} unique genes. ` +
-            "Please narrow the query range and try again."
+            "Please reduce the number of input variants and try again."
         );
-        return;
+        return false;
       }
 
       setPantherId({
@@ -87,20 +178,95 @@ function Home() {
       const nextResultInputType: InputTypes | null =
         payload?.input_type === "ids"
           ? InputTypes.VCF
-          : payload?.input_type === InputTypes.CHROMOSOME
-          ? InputTypes.CHROMOSOME
           : payload?.input_type === InputTypes.RSIDS
           ? InputTypes.RSIDS
           : null;
 
       setResultInputType(nextResultInputType);
+      setResultVcfText(inputVcfText);
+      setResultRunDate(runDate);
+      setResultMappingFields({
+        input: payload?.geneMappingFields ?? ALL_GENE_MAPPING_FIELDS,
+        // A reference gene list is not mapped, so it has no mapping tools.
+        reference:
+          payload?.referenceList?.input_type === InputTypes.GENES
+            ? null
+            : payload?.referenceList?.geneMappingFields ?? null,
+      });
 
       setCurrentStage(2);
       setSuccess(true);
+      return true;
+    };
+
+    const onEvent = (event: WorkflowStreamEvent) => {
+      if (controller.signal.aborted) {
+        return;
+      }
+      switch (event.event) {
+        case "stage":
+          setStageProgress((prev) => applyStageEvent(prev, event, Date.now()));
+          break;
+        case "result":
+          gotResult = true;
+          setIsLoading(false);
+          if (!showResults(event.data)) {
+            // Nothing to download for results that are not shown.
+            controller.abort();
+          }
+          break;
+        case "gene_details":
+          gotGeneDetails = true;
+          setWorkflowResponse((prev) => (prev ? { ...prev, ...event.data } : prev));
+          setDownloadsReady(true);
+          break;
+        case "error":
+          gotError = true;
+          if (gotResult) {
+            // Results are already on screen; only downloads are affected.
+            setGeneDetailsError(event.detail);
+          } else {
+            setError(event.detail);
+          }
+          break;
+      }
+    };
+
+    try {
+      await streamWorkflowOverrepresentation(
+        payload,
+        dataset,
+        correction,
+        testType,
+        onEvent,
+        controller.signal
+      );
+      if (controller.signal.aborted || gotError) {
+        return;
+      }
+      if (!gotResult) {
+        setError(
+          "The server closed the connection before the analysis finished. Please try again."
+        );
+      } else if (!gotGeneDetails) {
+        setGeneDetailsError("The server closed the connection before download data arrived.");
+      }
     } catch (error: any) {
-      setError(error?.message || "Error occurred while fetching data. Please try again.");
+      if (controller.signal.aborted) {
+        return;
+      }
+      const message =
+        error?.message || "Error occurred while fetching data. Please try again.";
+      if (gotResult) {
+        setGeneDetailsError(message);
+      } else {
+        setError(message);
+      }
     } finally {
-      setIsLoading(false);
+      if (runAbortRef.current === controller) {
+        runAbortRef.current = null;
+        setIsLoading(false);
+      }
     }
   };
 
@@ -112,7 +278,7 @@ function Home() {
 
     const form = document.createElement("form");
     form.method = "POST";
-    form.action = "https://pantherdb.org/services/oai/pantherdb/enrich/overrep";
+    form.action = "/services/oai/pantherdb/enrich/overrep"; //"https://pantherdb.org/services/oai/pantherdb/enrich/overrep";
     form.target = "_blank";
 
     const correctionField = document.createElement("input");
@@ -158,6 +324,22 @@ function Home() {
     form.appendChild(resourceField);
     form.appendChild(inputField);
 
+    // Keep PANTHER's page consistent with SNPWay when a custom reference was used.
+    if (workflowResponse.reference_gene_list?.length) {
+      const refInputField = document.createElement("input");
+      refInputField.type = "hidden";
+      refInputField.name = "refInputList";
+      refInputField.value = workflowResponse.reference_gene_list.join(",");
+
+      const refOrganismField = document.createElement("input");
+      refOrganismField.type = "hidden";
+      refOrganismField.name = "refOrganism";
+      refOrganismField.value = "9606";
+
+      form.appendChild(refInputField);
+      form.appendChild(refOrganismField);
+    }
+
     document.body.appendChild(form);
     form.submit();
     document.body.removeChild(form);
@@ -168,6 +350,11 @@ function Home() {
   };
 
   const resetAnalysis = () => {
+    // Stops any download data still being prepared for these results.
+    runAbortRef.current?.abort();
+    runAbortRef.current = null;
+    setIsLoading(false);
+    setGeneDetailsError(null);
     setCurrentStage(1);
     setWorkflowResponse(null);
     setError(null);
@@ -207,7 +394,8 @@ function Home() {
                   sx={{ maxWidth: 800 }}
                 >
                   Start with SNPs or rsIDs, collect gene mappings through AnnoQ,
-                  then launch PANTHER enrichment without switching tools. Please note, SNPWay is based on GRCh37/hg19.
+                  then launch PANTHER enrichment without switching tools.
+                  {genomeBuild && ` Please note, SNPWay is based on ${genomeBuild}.`}
                 </Typography>
               </Box>
               <Stack direction="row" spacing={2}>
@@ -231,7 +419,7 @@ function Home() {
                 <Button
                   variant="outlined"
                   color="secondary"
-                  onClick={() => window.open("https://annoq.org/", "_blank")}
+                  onClick={() => window.open(`${annoqSiteUrl}/`, "_blank")}
                   sx={{ whiteSpace: "nowrap" }}
                 >
                   Visit AnnoQ
@@ -274,23 +462,15 @@ function Home() {
             }}
           >
             {isLoading && (
-              <Box
-                sx={{
-                  p: 2,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  bgcolor: "primary.light",
-                  color: "primary.contrastText",
-                  borderRadius: 1,
-                  mb: 2,
-                }}
-              >
-                <CircularProgress size={20} color="inherit" sx={{ mr: 1 }} />
-                <Typography variant="body2">
-                  Processing your request, please wait...
-                </Typography>
-              </Box>
+              <ProgressPanel
+                stages={stageProgress}
+                startedAt={runStartedAt}
+                stageLabels={
+                  referenceIsGeneList
+                    ? { reference: "Reading reference gene list" }
+                    : undefined
+                }
+              />
             )}
 
             <TestInputs
@@ -300,6 +480,7 @@ function Home() {
                 setError(null);
                 setIsLoading(false);
               }}
+              genomeBuild={genomeBuild}
             />
           </Box>
         ) : (
@@ -309,7 +490,15 @@ function Home() {
             submitToPanther={submitToPanther}
             annotationDataset={pantherId.dataset}
             correctionType={pantherId.correction}
+            testType={pantherId.testType}
+            runDate={resultRunDate}
             inputTypeUsed={resultInputType}
+            inputVcfText={resultVcfText}
+            inputMappingFields={resultMappingFields.input}
+            referenceMappingFields={resultMappingFields.reference}
+            downloadsReady={downloadsReady}
+            geneDetailsProgress={stageProgress.gene_details ?? null}
+            geneDetailsError={geneDetailsError}
           />
         )}
 
@@ -322,6 +511,30 @@ function Home() {
           >
             <AlertTitle>Error</AlertTitle>
             {error}
+            {noGenesReport && (
+              <Box sx={{ mt: 1 }}>
+                <Button
+                  variant="outlined"
+                  color="inherit"
+                  size="small"
+                  onClick={() =>
+                    saveCsvFile(
+                      [
+                        ...noGenesReport.stampLines,
+                        createInputVariantReportCsv(
+                          noGenesReport.report,
+                          noGenesReport.vcfText !== null ? "chr:pos" : "rsId",
+                          noGenesReport.vcfText
+                        ),
+                      ].join("\n"),
+                      withRunDate("input_variant_report.csv", noGenesReport.runDate)
+                    )
+                  }
+                >
+                  Download Input Variant Report
+                </Button>
+              </Box>
+            )}
           </Alert>
         )}
 
@@ -361,15 +574,15 @@ function Home() {
           >
             Powered by{" "}
             <Link
-              href="https://annoq.org/"
+              href={`${annoqSiteUrl}/`}
               target="_blank"
               rel="noopener"
               underline="hover"
               sx={{ fontWeight: 600 }}
             >
               Annoq
-            </Link>{" "}
-            version 1.3 and{" "}
+            </Link>
+            {annoqRelease && ` version ${annoqRelease}`} and{" "}
             <Link
               href="https://pantherdb.org/"
               target="_blank"
@@ -382,13 +595,13 @@ function Home() {
             {". "}
             For the data version of individual tools in AnnoQ, please visit:{" "}
             <Link
-              href="http://annoq.org/version"
+              href={`${annoqSiteUrl}/version`}
               target="_blank"
               rel="noopener"
               underline="hover"
               sx={{ fontWeight: 600 }}
             >
-              annoq.org/version
+              {`${annoqSiteUrl.replace(/^https?:\/\//, "")}/version`}
             </Link>
           </Typography>
         </Box>

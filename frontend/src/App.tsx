@@ -5,6 +5,7 @@ import NotFound from "./pages/NotFound";
 import About from "./pages/About";
 import Tutorial from "./pages/Tutorial";
 import API from "./pages/API";
+import News from "./pages/News";
 import ResultsInterpretation from "./pages/ResultsInterpretation";
 import { ThemeProvider } from "@mui/material/styles";
 import theme from "./theme/theme";
@@ -22,7 +23,9 @@ function App() {
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <Routes>
-        <Route path="/" element={<Home />} />
+        {/* A new key on every navigation to "/" (Home link, logo) remounts the
+            page, so it always opens on the landing page with a reset form. */}
+        <Route path="/" element={<Home key={location.key} />} />
         <Route path="/about" element={<About />} />
         <Route path="/tutorial" element={<Tutorial />} />
         <Route
@@ -30,6 +33,7 @@ function App() {
           element={<ResultsInterpretation />}
         />
         <Route path="/api" element={<API />} />
+        <Route path="/news" element={<News />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </ThemeProvider>

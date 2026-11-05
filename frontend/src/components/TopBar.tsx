@@ -1,5 +1,6 @@
 import { Box, Button, Container, Stack } from "@mui/material";
 import { Link, useLocation } from "react-router-dom";
+import NewsBar from "./NewsBar";
 
 export default function TopBar() {
   const { pathname } = useLocation();
@@ -15,67 +16,80 @@ export default function TopBar() {
   });
 
   return (
-    <Box
-      component="nav"
-      sx={{
-        borderBottom: "1px solid",
-        borderColor: "divider",
-        backgroundColor: "primary.main",
-        boxShadow: "inset 0 -1px 0 rgba(18, 53, 91, 0.08)",
-      }}
-    >
-      <Container maxWidth="lg">
-        <Stack
-          direction="row"
-          alignItems="center"
-          justifyContent="space-between"
-          spacing={4}
-          sx={{ py: { xs: 1.5, md: 2 } }}
-        >
-          <Stack direction="row" spacing={1} alignItems="center">
-            <Button
-              component={Link}
-              to="/"
-              variant="text"
-              size="medium"
-              disableRipple
-              sx={linkStyles("/")}
-            >
-              Home
-            </Button>
-            <Button
-              component={Link}
-              to="/about"
-              variant="text"
-              size="medium"
-              disableRipple
-              sx={linkStyles("/about")}
-            >
-              About
-            </Button>
-            <Button
-              component={Link}
-              to="/tutorial"
-              variant="text"
-              size="medium"
-              disableRipple
-              sx={linkStyles("/tutorial")}
-            >
-              Tutorial
-            </Button>
-            <Button
-              component={Link}
-              to="/api"
-              variant="text"
-              size="medium"
-              disableRipple
-              sx={linkStyles("/api")}
-            >
-              API
-            </Button>
+    <>
+      <Box
+        component="nav"
+        sx={{
+          borderBottom: "1px solid",
+          borderColor: "divider",
+          backgroundColor: "primary.main",
+          boxShadow: "inset 0 -1px 0 rgba(18, 53, 91, 0.08)",
+        }}
+      >
+        <Container maxWidth="lg">
+          <Stack
+            direction="row"
+            alignItems="center"
+            justifyContent="space-between"
+            spacing={4}
+            sx={{ py: { xs: 1.5, md: 2 } }}
+          >
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Button
+                component={Link}
+                to="/"
+                variant="text"
+                size="medium"
+                disableRipple
+                sx={linkStyles("/")}
+              >
+                Home
+              </Button>
+              <Button
+                component={Link}
+                to="/about"
+                variant="text"
+                size="medium"
+                disableRipple
+                sx={linkStyles("/about")}
+              >
+                About
+              </Button>
+              <Button
+                component={Link}
+                to="/tutorial"
+                variant="text"
+                size="medium"
+                disableRipple
+                sx={linkStyles("/tutorial")}
+              >
+                Tutorial
+              </Button>
+              <Button
+                component={Link}
+                to="/api"
+                variant="text"
+                size="medium"
+                disableRipple
+                sx={linkStyles("/api")}
+              >
+                API
+              </Button>
+              <Button
+                component={Link}
+                to="/news"
+                variant="text"
+                size="medium"
+                disableRipple
+                sx={linkStyles("/news")}
+              >
+                News
+              </Button>
+            </Stack>
           </Stack>
-        </Stack>
-      </Container>
-    </Box>
+        </Container>
+      </Box>
+      {pathname !== "/news" && <NewsBar />}
+    </>
   );
 }

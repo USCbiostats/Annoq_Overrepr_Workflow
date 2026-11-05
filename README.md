@@ -4,6 +4,10 @@ This is a project that provides an application to run an overrepresentation anal
 
 The API utilizes [AnnoQ](http://annoq.org/) to get a list of genes from a list of SNPs. The list of genes is then used to run an overrepresentation analysis using [PantherDB](https://pantherdb.org/)
 
+The same workflow can be run from R with the [AnnoQR](https://github.com/USCbiostats/AnnoQR) package: `remotes::install_github("USCbiostats/AnnoQR")`.
+
+[AGENTS.md](AGENTS.md) documents the API and conventions for programmatic and agent integration.
+
 ## Installation
 
 To install the project, clone the repository.
@@ -32,9 +36,20 @@ To install the project, clone the repository.
     pip install -r requirements.txt
     ```
 
+5. Create `backend/.env` from the sample for your AnnoQ dataset, then edit it as necessary (see [backend/README.md](backend/README.md#configuration-env) for each setting).
+
+    ```bash
+    cp .env.hrc .env      # HRC (GRCh37/hg19), or:
+    cp .env.topmed .env   # TOPMed (GRCh38/hg38)
+    ```
+
+    Check `GA_MEASUREMENT_ID` and `GA_API_SECRET` for your deployment. Each sample already pairs its AnnoQ API (`ANNOTATION_API_V2`, `ANNOTATION_DOWNLOAD_V2`) with that dataset's rsID field (`ANNOQ_RSID_FIELD`); change them together.
+
 ## Building the Frontend
 
 Before running the application, the frontend must be built and the files must be moved to the backend directory.
+
+The frontend reads its settings from `frontend/.env` (copy `frontend/.env.example`). Leave `VITE_BACKEND_BASE_URL` empty for this build, because the backend serves the frontend and API from the same address. See [frontend/README.md](frontend/README.md) for running the frontend on its own against a backend on another port.
 
 To do this, CD into the backend directory if you are not already there.
 
@@ -63,8 +78,18 @@ Activate the virtual environment.
 source venv/bin/activate
 ```
 
-To run the API, use the following command:
+To run the API and the built frontend, use the following command:
+
+```bash
+python main.py
+```
+
+The port comes from `PORT` in `backend/.env` (see `backend/.env.hrc` and `backend/.env.topmed`); it defaults to 8002 when unset. The API and the frontend are both served on this port.
+
+During development you can instead run uvicorn directly, which reloads on code changes. Its `--port` option overrides `PORT`:
 
 ```bash
 uvicorn main:app --port 8002 --reload
 ```
+
+The VS Code debugger configuration in `.vscode/launch.json` also passes `--port 8002`. If you change the port and run the frontend on its own with `npm run dev`, update `VITE_BACKEND_BASE_URL` in `frontend/.env` to match.
